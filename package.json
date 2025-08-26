@@ -75,6 +75,12 @@
         "dmg"
       ]
     },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -84,7 +90,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "rakyu@vip.qq.com",
+        "owner": "yutaoyuan",
         "repo": "crm-app"
       }
     ]
