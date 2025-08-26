@@ -86,7 +86,8 @@
       {
         "provider": "github",
         "owner": "yutaoyuan",
-        "repo": "crm-app"
+        "repo": "crm-app",
+        "releaseType": "release"
       }
     ]
   }
