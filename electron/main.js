@@ -33,6 +33,8 @@ function checkForUpdates() {
 
 // 创建主窗口
 function createWindow() {
+  console.log('开始创建主窗口');
+  
   // 创建持久化的 session
   const persistentSession = session.fromPartition('persist:main', {
     cache: true
@@ -52,15 +54,30 @@ function createWindow() {
     }
   });
 
+  console.log('主窗口对象已创建');
+
   // 等待页面加载完成后再显示窗口
   mainWindow.once('ready-to-show', () => {
+    console.log('窗口准备显示');
     mainWindow.show();
     mainWindow.focus();
+    console.log('窗口已显示');
   });
 
   // 处理窗口关闭事件
   mainWindow.on('closed', function () {
+    console.log('窗口已关闭');
     mainWindow = null;
+  });
+
+  // 处理页面加载失败
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('页面加载失败:', errorCode, errorDescription, validatedURL);
+  });
+
+  // 处理页面加载完成
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('页面加载完成');
   });
 
   return mainWindow;
@@ -139,20 +156,28 @@ function ensureDirectoriesExist() {
     if (!fs.existsSync(dir)) {
       try {
         fs.mkdirSync(dir, { recursive: true });
+        console.log('创建目录成功:', dir);
       } catch (err) {
-        console.error('创建目录失败:', err);
+        console.error('创建目录失败:', dir, err);
       }
+    } else {
+      console.log('目录已存在:', dir);
     }
   });
 }
 
 // 在应用启动时立即创建目录
+console.log('开始确保必要目录存在');
 ensureDirectoriesExist();
+console.log('目录检查完成');
 
 app.whenReady().then(async () => {
+  console.log('Electron应用已就绪');
+  
   // 设置 session 存储路径
   const sessionPath = path.join(process.resourcesPath, 'databaseFolder', 'sessions');
   session.defaultSession.setPreloads([path.join(__dirname, 'preload.js')]);
+  console.log('Session预加载设置完成');
 
   // 在开发环境中彻底清除所有缓存和存储数据
   if (process.env.ELECTRON_DEV) {
@@ -163,46 +188,61 @@ app.whenReady().then(async () => {
     console.log('已清除开发环境所有缓存和存储数据');
   }
 
-  const { app: serverApp, PORT } = require('../app');
+  try {
+    console.log('开始启动Express服务器');
+    const { app: serverApp, PORT } = require('../app');
+    console.log('Express应用已加载，端口:', PORT);
 
-  // 创建主窗口
-  mainWindow = createWindow();
+    // 创建主窗口
+    console.log('开始创建主窗口');
+    mainWindow = createWindow();
+    console.log('主窗口创建完成');
 
-  // 启动 Express 服务器
-  serverApp.listen(PORT, () => {
-    console.log(`服务器启动，端口: ${PORT}`);
-  });
+    // 启动 Express 服务器
+    serverApp.listen(PORT, () => {
+      console.log(`服务器启动成功，端口: ${PORT}`);
+    });
 
-  // 加载应用
-  mainWindow.loadURL(`http://localhost:${PORT}`);
+    // 加载应用
+    console.log('开始加载应用URL');
+    mainWindow.loadURL(`http://localhost:${PORT}`);
+    console.log('应用URL加载命令已发送');
 
-  // 处理页面加载错误
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('页面加载失败:', errorCode, errorDescription);
-  });
-
-  // 应用加载完成后检查更新
-  mainWindow.webContents.once('dom-ready', () => {
-    checkForUpdates();
-  });
+    // 应用加载完成后检查更新
+    mainWindow.webContents.once('dom-ready', () => {
+      console.log('DOM已准备就绪，开始检查更新');
+      checkForUpdates();
+    });
+  } catch (error) {
+    console.error('应用启动过程中发生错误:', error);
+  }
 });
 
 app.on('window-all-closed', function () {
+  console.log('所有窗口已关闭');
   if (process.platform !== 'darwin') {
+    console.log('正在退出应用');
     app.quit();
   }
 });
 
 app.on('activate', function () {
+  console.log('应用激活事件');
   if (mainWindow === null) {
+    console.log('重新创建窗口');
     mainWindow = createWindow();
   }
 });
 
 app.on('before-quit', () => {
+  console.log('应用即将退出');
   if (serverProcess) {
     serverProcess.kill();
   }
+});
+
+app.on('quit', () => {
+  console.log('应用已退出');
 });
 
 // 监听来自渲染进程的更新检查请求
