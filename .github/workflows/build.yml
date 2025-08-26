@@ -23,24 +23,32 @@ jobs:
         node-version: '20'
         cache: 'npm'
 
+    - name: Set up Python (macOS)
+      if: matrix.os == 'macos-latest'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
     - name: Install Python dependencies (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        python3 -m pip install setuptools
-        python3 -c "import distutils" || echo "distutils not available"
+        python3 -m pip install --user setuptools
 
     - name: Install dependencies
       run: npm ci
       timeout-minutes: 10
+      env:
+        npm_config_arch: x64
 
     - name: Rebuild native modules
-      run: npx @electron/rebuild
+      run: npx @electron/rebuild --arch x64
       timeout-minutes: 15
 
     - name: Build application
       run: npm run build
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+        npm_config_arch: x64
       timeout-minutes: 30
 
     - name: Upload Windows artifacts
