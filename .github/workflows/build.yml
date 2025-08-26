@@ -38,7 +38,15 @@ jobs:
       run: npm ci
       timeout-minutes: 10
 
-    - name: Build application
+    - name: Build application (macOS x64)
+      if: matrix.os == 'macos-latest'
+      run: npm run build -- --mac --x64
+      env:
+        GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+      timeout-minutes: 30
+
+    - name: Build application (Windows)
+      if: matrix.os == 'windows-latest'
       run: npm run build
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}

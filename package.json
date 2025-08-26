@@ -74,9 +74,6 @@
       "category": "public.app-category.business",
       "target": [
         "dmg"
-      ],
-      "arch": [
-        "x64"
       ]
     },
     "nsis": {
