@@ -12,7 +12,9 @@ let dbFile;
 if (isDev) {
   dbFile = path.join(__dirname, '../databaseFolder/database.db3');
 } else {
-  dbFile = path.join(process.resourcesPath, 'databaseFolder', 'database.db3');
+  // 在生产环境中，使用应用数据目录
+  const userDataPath = require('electron').app.getPath('userData');
+  dbFile = path.join(userDataPath, 'databaseFolder', 'database.db3');
 }
 
 console.log('数据库文件路径:', dbFile);
