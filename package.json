@@ -8,6 +8,7 @@
     "dev": "nodemon app.js",
     "electron": "NODE_ENV=development ELECTRON_DEV=1 electron .",
     "build": "NODE_ENV=production electron-builder",
+    "postinstall": "electron-builder install-app-deps",
     "pack": "electron-builder --dir",
     "backup-db": "node scripts/backup-db.js",
     "restore-db": "node scripts/restore-db.js"
