@@ -84,7 +84,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "yrakyu",
+        "owner": "yutaoyuan",
         "repo": "crm-app"
       }
     ]
