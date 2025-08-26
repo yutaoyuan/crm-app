@@ -37,18 +37,11 @@ jobs:
     - name: Install dependencies
       run: npm ci
       timeout-minutes: 10
-      env:
-        npm_config_arch: x64
-
-    - name: Rebuild native modules
-      run: npx @electron/rebuild --arch x64
-      timeout-minutes: 15
 
     - name: Build application
       run: npm run build
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
-        npm_config_arch: x64
       timeout-minutes: 30
 
     - name: Upload Windows artifacts
@@ -87,7 +80,7 @@ jobs:
       with:
         files: |
           dist/*/*
-        draft: true
+        draft: false
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
