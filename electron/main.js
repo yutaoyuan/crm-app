@@ -9,10 +9,6 @@ const { autoUpdater } = require('electron-updater');
 let mainWindow;
 let serverProcess;
 
-// 设置应用数据路径
-const userDataPath = path.join(process.resourcesPath, 'databaseFolder');
-app.setPath('userData', userDataPath);
-
 // 显示错误对话框的函数
 function showErrorDialog(message) {
   console.error('显示错误:', message);
@@ -25,6 +21,32 @@ function showErrorDialog(message) {
     });
   }
 }
+
+// 设置应用数据路径
+function setupAppPaths() {
+  try {
+    // 在生产环境中使用正确的资源路径
+    let userDataPath;
+    if (app.isPackaged) {
+      // 生产环境
+      userDataPath = path.join(app.getPath('userData'), 'databaseFolder');
+    } else {
+      // 开发环境
+      userDataPath = path.join(process.resourcesPath, 'databaseFolder');
+    }
+    
+    app.setPath('userData', userDataPath);
+    console.log('应用数据路径设置为:', userDataPath);
+    return userDataPath;
+  } catch (error) {
+    const errorMessage = `设置应用路径失败: ${error.message}`;
+    console.error(errorMessage);
+    showErrorDialog(errorMessage);
+    throw error;
+  }
+}
+
+const userDataPath = setupAppPaths();
 
 // 配置自动更新
 autoUpdater.autoDownload = false; // 不自动下载更新
@@ -58,7 +80,7 @@ function createWindow() {
     mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
-      show: false, // 先不显示窗口，等页面加载完成后再显示
+      show: true, // 立即显示窗口以确保可见性
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
@@ -70,14 +92,6 @@ function createWindow() {
     });
 
     console.log('主窗口对象已创建');
-
-    // 等待页面加载完成后再显示窗口
-    mainWindow.once('ready-to-show', () => {
-      console.log('窗口准备显示');
-      mainWindow.show();
-      mainWindow.focus();
-      console.log('窗口已显示');
-    });
 
     // 处理窗口关闭事件
     mainWindow.on('closed', function () {
@@ -223,7 +237,7 @@ app.whenReady().then(async () => {
   
   try {
     // 设置 session 存储路径
-    const sessionPath = path.join(process.resourcesPath, 'databaseFolder', 'sessions');
+    const sessionPath = path.join(userDataPath, 'sessions');
     session.defaultSession.setPreloads([path.join(__dirname, 'preload.js')]);
     console.log('Session预加载设置完成');
 
@@ -237,8 +251,21 @@ app.whenReady().then(async () => {
     }
 
     console.log('开始启动Express服务器');
-    const { app: serverApp, PORT } = require('../app');
-    console.log('Express应用已加载，端口:', PORT);
+    
+    // 动态导入app模块以确保正确的路径
+    let serverApp, PORT;
+    try {
+      const appModule = require('../app');
+      serverApp = appModule.app || appModule;
+      PORT = appModule.PORT || 3000;
+      console.log('Express应用已加载，端口:', PORT);
+    } catch (error) {
+      const errorMessage = `加载Express应用失败: ${error.message}
+堆栈: ${error.stack}`;
+      console.error(errorMessage);
+      showErrorDialog(errorMessage);
+      throw error;
+    }
 
     // 创建主窗口
     console.log('开始创建主窗口');
@@ -246,9 +273,16 @@ app.whenReady().then(async () => {
     console.log('主窗口创建完成');
 
     // 启动 Express 服务器
-    serverApp.listen(PORT, () => {
-      console.log(`服务器启动成功，端口: ${PORT}`);
-    });
+    try {
+      serverApp.listen(PORT, () => {
+        console.log(`服务器启动成功，端口: ${PORT}`);
+      });
+    } catch (error) {
+      const errorMessage = `启动服务器失败: ${error.message}`;
+      console.error(errorMessage);
+      showErrorDialog(errorMessage);
+      throw error;
+    }
 
     // 加载应用
     console.log('开始加载应用URL');
@@ -299,4 +333,4 @@ app.on('quit', () => {
 const { ipcMain } = require('electron');
 ipcMain.on('check-for-updates', () => {
   checkForUpdates();
-}); 
+});
