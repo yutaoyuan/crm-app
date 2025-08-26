@@ -1,9 +1,8 @@
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const knex = require('knex');
-const { app } = require('electron');
 
 // 判断是否为开发/测试环境
 const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === '1';
@@ -39,7 +38,7 @@ try {
 
 // knex 配置
 const knexConfig = {
-    client: 'sqlite3',
+    client: 'better-sqlite3',
     connection: {
         filename: dbFile
     },
@@ -47,34 +46,27 @@ const knexConfig = {
 };
 const knexDb = knex(knexConfig);
 
-// sqlite3 连接
-const db = new sqlite3.Database(dbFile, (err) => {
-  if (err) {
-    console.error('数据库连接失败:', err);
-  } else {
-    console.log('数据库连接成功');
-  }
-});
+// better-sqlite3 连接
+const db = new Database(dbFile);
 
 console.log('数据库实际路径:', dbFile);
+console.log('数据库连接成功');
 
 // 初始化数据库表结构
 const init = () => {
   return new Promise((resolve, reject) => {
-    db.serialize(() => {
+    try {
       // 用户表
-      db.run(`CREATE TABLE IF NOT EXISTS users (
+      db.exec(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         email TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`, (err) => {
-        if (err) reject(err);
-      });
+      )`);
 
       // 客户表
-      db.run(`CREATE TABLE IF NOT EXISTS customers (
+      db.exec(`CREATE TABLE IF NOT EXISTS customers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         phone TEXT UNIQUE NOT NULL,
@@ -101,12 +93,10 @@ const init = () => {
         last_consumption TEXT,
         last_visit TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`, (err) => {
-        if (err) reject(err);
-      });
+      )`);
 
       // 销售表
-      db.run(`CREATE TABLE IF NOT EXISTS sales (
+      db.exec(`CREATE TABLE IF NOT EXISTS sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id INTEGER,
         name TEXT NOT NULL,
@@ -121,12 +111,10 @@ const init = () => {
         total_amount REAL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customer_id) REFERENCES customers(id)
-      )`, (err) => {
-        if (err) reject(err);
-      });
+      )`);
 
       // 销售商品明细表
-      db.run(`CREATE TABLE IF NOT EXISTS sales_item (
+      db.exec(`CREATE TABLE IF NOT EXISTS sales_item (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sale_id INTEGER NOT NULL,
         product_code TEXT NOT NULL,
@@ -135,12 +123,10 @@ const init = () => {
         amount REAL NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
-      )`, (err) => {
-        if (err) reject(err);
-      });
+      )`);
 
       // 积分表
-      db.run(`CREATE TABLE IF NOT EXISTS points (
+      db.exec(`CREATE TABLE IF NOT EXISTS points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id INTEGER,
         name TEXT NOT NULL,
@@ -152,12 +138,10 @@ const init = () => {
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customer_id) REFERENCES customers(id)
-      )`, (err) => {
-        if (err) reject(err);
-      });
+      )`);
 
       // 回访记录表
-      db.run(`CREATE TABLE IF NOT EXISTS customer_visits (
+      db.exec(`CREATE TABLE IF NOT EXISTS customer_visits (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id INTEGER NOT NULL,
         customer_name TEXT NOT NULL,
@@ -172,35 +156,29 @@ const init = () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customer_id) REFERENCES customers(id),
         FOREIGN KEY (created_by) REFERENCES users(id)
-      )`, (err) => {
-        if (err) reject(err);
-      });
+      )`);
 
-      // 创建默认用户
-      db.get("SELECT * FROM users WHERE username = ?", ["zhaochunyan"], (err, row) => {
-        if (err) {
-          reject(err);
-        } else if (!row) {
-          // 如果默认用户不存在，创建它
-          bcrypt.hash('zcy@123456', 10, (err, hash) => {
-            if (err) {
-              reject(err);
-            } else {
-              db.run("INSERT INTO users (username, password, email) VALUES (?, ?, ?)", 
-                ["zhaochunyan", hash, "zhaochunyan@example.com"], (err) => {
-                if (err) {
-                  reject(err);
-                } else {
-                  resolve();
-                }
-              });
-            }
-          });
-        } else {
-          resolve();
-        }
-      });
-    });
+      // 检查默认用户是否存在
+      const userExists = db.prepare("SELECT COUNT(*) as count FROM users WHERE username = ?").get(["zhaochunyan"]);
+      
+      if (userExists.count === 0) {
+        // 如果默认用户不存在，创建它
+        bcrypt.hash('zcy@123456', 10, (err, hash) => {
+          if (err) {
+            reject(err);
+          } else {
+            const insertUser = db.prepare("INSERT INTO users (username, password, email) VALUES (?, ?, ?)");
+            insertUser.run(["zhaochunyan", hash, "zhaochunyan@example.com"]);
+            console.log('默认用户创建成功');
+            resolve();
+          }
+        });
+      } else {
+        resolve();
+      }
+    } catch (err) {
+      reject(err);
+    }
   });
 };
 
@@ -220,23 +198,20 @@ function recalculateCustomerConsumption(customerId) {
     
     console.log(`开始重新计算客户ID: ${customerId} 的消费信息`);
     
-    // 查询该客户的所有销售记录统计信息
-    const consumptionQuery = `
-      SELECT 
-        COALESCE(SUM(s.total_amount), 0) as total_consumption,
-        COALESCE(SUM(si.quantity), 0) as consumption_count,
-        COUNT(DISTINCT s.id) as consumption_times,
-        MAX(s.date) as last_consumption
-      FROM sales s
-      LEFT JOIN sales_item si ON s.id = si.sale_id
-      WHERE s.customer_id = ? AND s.total_amount > 0
-    `;
-    
-    db.get(consumptionQuery, [customerId], (err, result) => {
-      if (err) {
-        console.error('查询客户消费统计失败:', err);
-        return reject(err);
-      }
+    try {
+      // 查询该客户的所有销售记录统计信息
+      const stmt = db.prepare(`
+        SELECT 
+          COALESCE(SUM(s.total_amount), 0) as total_consumption,
+          COALESCE(SUM(si.quantity), 0) as consumption_count,
+          COUNT(DISTINCT s.id) as consumption_times,
+          MAX(s.date) as last_consumption
+        FROM sales s
+        LEFT JOIN sales_item si ON s.id = si.sale_id
+        WHERE s.customer_id = ? AND s.total_amount > 0
+      `);
+      
+      const result = stmt.get(customerId);
       
       const consumptionData = {
         total_consumption: result?.total_consumption || 0,
@@ -248,7 +223,7 @@ function recalculateCustomerConsumption(customerId) {
       console.log(`客户ID: ${customerId} 的消费统计结果:`, consumptionData);
       
       // 更新客户表的消费信息
-      db.run(`
+      const updateStmt = db.prepare(`
         UPDATE customers 
         SET 
           total_consumption = ?,
@@ -256,22 +231,22 @@ function recalculateCustomerConsumption(customerId) {
           consumption_times = ?,
           last_consumption = ?
         WHERE id = ?
-      `, [
+      `);
+      
+      updateStmt.run([
         consumptionData.total_consumption,
         consumptionData.consumption_count,
         consumptionData.consumption_times,
         consumptionData.last_consumption,
         customerId
-      ], function(err) {
-        if (err) {
-          console.error(`更新客户消费信息失败:`, err);
-          return reject(err);
-        }
-        
-        console.log(`已重新计算客户ID ${customerId} 的消费信息`);
-        resolve(consumptionData);
-      });
-    });
+      ]);
+      
+      console.log(`已重新计算客户ID ${customerId} 的消费信息`);
+      resolve(consumptionData);
+    } catch (err) {
+      console.error(`重新计算客户消费信息失败:`, err);
+      reject(err);
+    }
   });
 }
 
@@ -283,41 +258,51 @@ function recalculateAllCustomersConsumption() {
   return new Promise((resolve, reject) => {
     console.log('开始批量重新计算所有客户的消费信息...');
     
-    // 获取所有客户ID
-    db.all('SELECT id FROM customers', [], (err, customers) => {
-      if (err) {
-        console.error('获取客户列表失败:', err);
-        return reject(err);
-      }
+    try {
+      // 获取所有客户ID
+      const stmt = db.prepare('SELECT id FROM customers');
+      const customers = stmt.all();
       
       console.log(`找到 ${customers.length} 个客户，开始重新计算...`);
       
-      // 创建处理队列
-      const processCustomer = (index) => {
-        if (index >= customers.length) {
-          console.log('所有客户消费信息重新计算完成');
-          return resolve({ 
-            total: customers.length, 
-            message: '所有客户消费信息重新计算完成' 
-          });
-        }
-        
-        const customer = customers[index];
+      // 处理所有客户
+      let processed = 0;
+      customers.forEach(customer => {
         recalculateCustomerConsumption(customer.id)
           .then(() => {
-            // 处理下一个客户
-            processCustomer(index + 1);
+            processed++;
+            if (processed === customers.length) {
+              console.log('所有客户消费信息重新计算完成');
+              resolve({ 
+                total: customers.length, 
+                message: '所有客户消费信息重新计算完成' 
+              });
+            }
           })
           .catch(err => {
             console.error(`重新计算客户ID ${customer.id} 的消费信息失败:`, err);
-            // 继续处理下一个客户，不中断整个过程
-            processCustomer(index + 1);
+            processed++;
+            if (processed === customers.length) {
+              console.log('所有客户消费信息重新计算完成（部分失败）');
+              resolve({ 
+                total: customers.length, 
+                message: '所有客户消费信息重新计算完成（部分失败）' 
+              });
+            }
           });
-      };
+      });
       
-      // 开始处理第一个客户
-      processCustomer(0);
-    });
+      if (customers.length === 0) {
+        console.log('没有客户需要重新计算');
+        resolve({ 
+          total: 0, 
+          message: '没有客户需要重新计算' 
+        });
+      }
+    } catch (err) {
+      console.error('获取客户列表失败:', err);
+      reject(err);
+    }
   });
 }
 
@@ -333,12 +318,10 @@ function recalculateCustomerPoints(customerId) {
       return resolve(false);
     }
     
-    // 先获取客户的电话号码，以便查询相关积分记录
-    db.get('SELECT phone FROM customers WHERE id = ?', [customerId], (err, customer) => {
-      if (err) {
-        console.error('获取客户信息失败:', err);
-        return reject(err);
-      }
+    try {
+      // 先获取客户的电话号码，以便查询相关积分记录
+      const customerStmt = db.prepare('SELECT phone FROM customers WHERE id = ?');
+      const customer = customerStmt.get(customerId);
       
       if (!customer) {
         console.error(`未找到客户ID: ${customerId}`);
@@ -348,63 +331,51 @@ function recalculateCustomerPoints(customerId) {
       const customerPhone = customer.phone;
       
       // 新的累计积分计算 - 根据销售记录的总消费金额计算
-      const totalPointsQuery = `
+      const totalPointsStmt = db.prepare(`
         SELECT 
           COALESCE(SUM(total_amount), 0) as total_amount
         FROM sales 
         WHERE customer_id = ? OR (phone = ? AND phone IS NOT NULL AND phone != '')
-      `;
+      `);
+      
+      const totalResult = totalPointsStmt.get(customerId, customerPhone);
       
       // 查询可用积分 - 所有积分的净和
-      const availablePointsQuery = `
+      const availablePointsStmt = db.prepare(`
         SELECT 
           SUM(points) as available_points
         FROM points 
         WHERE customer_id = ? OR (phone = ? AND phone IS NOT NULL AND phone != '')
-      `;
+      `);
       
-      // 先获取总消费金额
-      db.get(totalPointsQuery, [customerId, customerPhone], (err, totalResult) => {
-        if (err) {
-          console.error('计算总消费金额失败:', err);
-          return reject(err);
-        }
-        
-        // 计算累计积分 = 总消费金额向下取整
-        const totalPoints = totalResult && totalResult.total_amount ? Math.floor(totalResult.total_amount) : 0;
-        
-        // 然后获取可用积分
-        db.get(availablePointsQuery, [customerId, customerPhone], (err, availableResult) => {
-          if (err) {
-            console.error('计算可用积分失败:', err);
-            return reject(err);
-          }
-          
-          // 处理null结果
-          const availablePoints = availableResult && availableResult.available_points ? availableResult.available_points : 0;
-          
-          // 更新客户表
-          db.run(`
-            UPDATE customers 
-            SET 
-              total_points = ?,
-              available_points = ?
-            WHERE id = ?
-          `, [totalPoints, availablePoints, customerId], function(err) {
-            if (err) {
-              console.error(`更新客户积分数据失败:`, err);
-              return reject(err);
-            }
-            
-            console.log(`已重新计算客户ID ${customerId} 的积分数据: 累计积分=${totalPoints}, 可用积分=${availablePoints}`);
-            resolve({
-              totalPoints,
-              availablePoints
-            });
-          });
-        });
+      const availableResult = availablePointsStmt.get(customerId, customerPhone);
+      
+      // 计算累计积分 = 总消费金额向下取整
+      const totalPoints = totalResult && totalResult.total_amount ? Math.floor(totalResult.total_amount) : 0;
+      
+      // 处理null结果
+      const availablePoints = availableResult && availableResult.available_points ? availableResult.available_points : 0;
+      
+      // 更新客户表
+      const updateStmt = db.prepare(`
+        UPDATE customers 
+        SET 
+          total_points = ?,
+          available_points = ?
+        WHERE id = ?
+      `);
+      
+      updateStmt.run(totalPoints, availablePoints, customerId);
+      
+      console.log(`已重新计算客户ID ${customerId} 的积分数据: 累计积分=${totalPoints}, 可用积分=${availablePoints}`);
+      resolve({
+        totalPoints,
+        availablePoints
       });
-    });
+    } catch (err) {
+      console.error('计算客户积分失败:', err);
+      reject(err);
+    }
   });
 }
 
