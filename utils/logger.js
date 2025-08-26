@@ -8,9 +8,22 @@ const path = require('path');
 const fs = require('fs');
 
 // 确保日志目录存在
-const logDir = path.join(process.cwd(), 'logs');
+// 使用应用数据目录而不是当前工作目录
+const logDir = path.join(require('electron').app.getPath('userData'), 'logs');
 if (!fs.existsSync(logDir)) {
-  fs.mkdirSync(logDir, { recursive: true });
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+    console.log('创建日志目录成功:', logDir);
+  } catch (err) {
+    console.error('创建日志目录失败:', err);
+    // 如果无法创建日志目录，使用临时目录
+    const tempLogDir = path.join(require('os').tmpdir(), 'crm-logs');
+    if (!fs.existsSync(tempLogDir)) {
+      fs.mkdirSync(tempLogDir, { recursive: true });
+    }
+    logDir = tempLogDir;
+    console.log('使用临时日志目录:', logDir);
+  }
 }
 
 // 自定义日志格式
