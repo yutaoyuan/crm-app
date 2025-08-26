@@ -13,6 +13,19 @@ let serverProcess;
 const userDataPath = path.join(process.resourcesPath, 'databaseFolder');
 app.setPath('userData', userDataPath);
 
+// 显示错误对话框的函数
+function showErrorDialog(message) {
+  console.error('显示错误:', message);
+  // 在应用准备就绪前显示错误
+  if (app.isReady()) {
+    dialog.showErrorBox('应用错误', message);
+  } else {
+    app.whenReady().then(() => {
+      dialog.showErrorBox('应用错误', message);
+    });
+  }
+}
+
 // 配置自动更新
 autoUpdater.autoDownload = false; // 不自动下载更新
 autoUpdater.autoInstallOnAppQuit = true; // 退出时自动安装更新
@@ -28,6 +41,7 @@ function checkForUpdates() {
     console.log('检查更新完成', result);
   }).catch((error) => {
     console.error('检查更新失败', error);
+    showErrorDialog(`检查更新失败: ${error.message}`);
   });
 }
 
@@ -35,57 +49,74 @@ function checkForUpdates() {
 function createWindow() {
   console.log('开始创建主窗口');
   
-  // 创建持久化的 session
-  const persistentSession = session.fromPartition('persist:main', {
-    cache: true
-  });
+  try {
+    // 创建持久化的 session
+    const persistentSession = session.fromPartition('persist:main', {
+      cache: true
+    });
 
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: false, // 先不显示窗口，等页面加载完成后再显示
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      // 使用持久化的 session
-      session: persistentSession,
-      // 在开发环境中禁用缓存
-      cache: !process.env.ELECTRON_DEV
-    }
-  });
+    mainWindow = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      show: false, // 先不显示窗口，等页面加载完成后再显示
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        // 使用持久化的 session
+        session: persistentSession,
+        // 在开发环境中禁用缓存
+        cache: !process.env.ELECTRON_DEV
+      }
+    });
 
-  console.log('主窗口对象已创建');
+    console.log('主窗口对象已创建');
 
-  // 等待页面加载完成后再显示窗口
-  mainWindow.once('ready-to-show', () => {
-    console.log('窗口准备显示');
-    mainWindow.show();
-    mainWindow.focus();
-    console.log('窗口已显示');
-  });
+    // 等待页面加载完成后再显示窗口
+    mainWindow.once('ready-to-show', () => {
+      console.log('窗口准备显示');
+      mainWindow.show();
+      mainWindow.focus();
+      console.log('窗口已显示');
+    });
 
-  // 处理窗口关闭事件
-  mainWindow.on('closed', function () {
-    console.log('窗口已关闭');
-    mainWindow = null;
-  });
+    // 处理窗口关闭事件
+    mainWindow.on('closed', function () {
+      console.log('窗口已关闭');
+      mainWindow = null;
+    });
 
-  // 处理页面加载失败
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-    console.error('页面加载失败:', errorCode, errorDescription, validatedURL);
-  });
+    // 处理页面加载失败
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+      const errorMessage = `页面加载失败: ${errorCode} ${errorDescription} URL: ${validatedURL}`;
+      console.error(errorMessage);
+      showErrorDialog(errorMessage);
+    });
 
-  // 处理页面加载完成
-  mainWindow.webContents.on('did-finish-load', () => {
-    console.log('页面加载完成');
-  });
+    // 处理页面加载完成
+    mainWindow.webContents.on('did-finish-load', () => {
+      console.log('页面加载完成');
+    });
 
-  return mainWindow;
+    // 处理未捕获的异常
+    mainWindow.webContents.on('crashed', (event, killed) => {
+      const errorMessage = `渲染进程崩溃: ${killed ? '被系统杀死' : '异常崩溃'}`;
+      console.error(errorMessage);
+      showErrorDialog(errorMessage);
+    });
+
+    return mainWindow;
+  } catch (error) {
+    const errorMessage = `创建窗口时发生错误: ${error.message}`;
+    console.error(errorMessage);
+    showErrorDialog(errorMessage);
+    throw error;
+  }
 }
 
 // 自动更新事件处理
 autoUpdater.on('error', (error) => {
   console.error('自动更新错误:', error);
+  showErrorDialog(`自动更新错误: ${error.message}`);
   if (mainWindow) {
     mainWindow.webContents.send('update-error', error.message || '更新失败');
   }
@@ -158,13 +189,29 @@ function ensureDirectoriesExist() {
         fs.mkdirSync(dir, { recursive: true });
         console.log('创建目录成功:', dir);
       } catch (err) {
-        console.error('创建目录失败:', dir, err);
+        const errorMessage = `创建目录失败: ${dir} 错误: ${err.message}`;
+        console.error(errorMessage);
+        showErrorDialog(errorMessage);
       }
     } else {
       console.log('目录已存在:', dir);
     }
   });
 }
+
+// 捕获未处理的异常
+process.on('uncaughtException', (error) => {
+  const errorMessage = `未捕获的异常: ${error.message}
+堆栈: ${error.stack}`;
+  console.error(errorMessage);
+  showErrorDialog(errorMessage);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  const errorMessage = `未处理的Promise拒绝: ${reason}`;
+  console.error(errorMessage);
+  showErrorDialog(errorMessage);
+});
 
 // 在应用启动时立即创建目录
 console.log('开始确保必要目录存在');
@@ -174,21 +221,21 @@ console.log('目录检查完成');
 app.whenReady().then(async () => {
   console.log('Electron应用已就绪');
   
-  // 设置 session 存储路径
-  const sessionPath = path.join(process.resourcesPath, 'databaseFolder', 'sessions');
-  session.defaultSession.setPreloads([path.join(__dirname, 'preload.js')]);
-  console.log('Session预加载设置完成');
-
-  // 在开发环境中彻底清除所有缓存和存储数据
-  if (process.env.ELECTRON_DEV) {
-    await session.defaultSession.clearCache();
-    await session.defaultSession.clearStorageData({
-      storages: ['appcache', 'cookies', 'filesystem', 'indexdb', 'localstorage', 'shadercache', 'websql', 'serviceworkers', 'cachestorage']
-    });
-    console.log('已清除开发环境所有缓存和存储数据');
-  }
-
   try {
+    // 设置 session 存储路径
+    const sessionPath = path.join(process.resourcesPath, 'databaseFolder', 'sessions');
+    session.defaultSession.setPreloads([path.join(__dirname, 'preload.js')]);
+    console.log('Session预加载设置完成');
+
+    // 在开发环境中彻底清除所有缓存和存储数据
+    if (process.env.ELECTRON_DEV) {
+      await session.defaultSession.clearCache();
+      await session.defaultSession.clearStorageData({
+        storages: ['appcache', 'cookies', 'filesystem', 'indexdb', 'localstorage', 'shadercache', 'websql', 'serviceworkers', 'cachestorage']
+      });
+      console.log('已清除开发环境所有缓存和存储数据');
+    }
+
     console.log('开始启动Express服务器');
     const { app: serverApp, PORT } = require('../app');
     console.log('Express应用已加载，端口:', PORT);
@@ -214,7 +261,10 @@ app.whenReady().then(async () => {
       checkForUpdates();
     });
   } catch (error) {
-    console.error('应用启动过程中发生错误:', error);
+    const errorMessage = `应用启动过程中发生错误: ${error.message}
+堆栈: ${error.stack}`;
+    console.error(errorMessage);
+    showErrorDialog(errorMessage);
   }
 });
 
