@@ -75,12 +75,6 @@
         "dmg"
       ]
     },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Office"
-    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

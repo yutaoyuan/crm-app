@@ -6,15 +6,12 @@ on:
       - main
     tags:
       - 'v*'
-  pull_request:
-    branches:
-      - main
 
 jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
         
     runs-on: ${{ matrix.os }}
     
@@ -37,13 +34,6 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       timeout-minutes: 30
-
-    - name: Upload artifacts
-      if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: linux-build
-        path: dist/*.AppImage
 
     - name: Upload Windows artifacts
       if: matrix.os == 'windows-latest'
