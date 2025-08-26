@@ -31,6 +31,41 @@ function checkForUpdates() {
   });
 }
 
+// 创建主窗口
+function createWindow() {
+  // 创建持久化的 session
+  const persistentSession = session.fromPartition('persist:main', {
+    cache: true
+  });
+
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: false, // 先不显示窗口，等页面加载完成后再显示
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      // 使用持久化的 session
+      session: persistentSession,
+      // 在开发环境中禁用缓存
+      cache: !process.env.ELECTRON_DEV
+    }
+  });
+
+  // 等待页面加载完成后再显示窗口
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  // 处理窗口关闭事件
+  mainWindow.on('closed', function () {
+    mainWindow = null;
+  });
+
+  return mainWindow;
+}
+
 // 自动更新事件处理
 autoUpdater.on('error', (error) => {
   console.error('自动更新错误:', error);
@@ -105,6 +140,7 @@ function ensureDirectoriesExist() {
       try {
         fs.mkdirSync(dir, { recursive: true });
       } catch (err) {
+        console.error('创建目录失败:', err);
       }
     }
   });
@@ -129,38 +165,25 @@ app.whenReady().then(async () => {
 
   const { app: serverApp, PORT } = require('../app');
 
-  // 创建持久化的 session
-  const persistentSession = session.fromPartition('persist:main', {
-    cache: true
-  });
-
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      // 使用持久化的 session
-      session: persistentSession,
-      // 在开发环境中禁用缓存
-      cache: !process.env.ELECTRON_DEV
-    }
-  });
+  // 创建主窗口
+  mainWindow = createWindow();
 
   // 启动 Express 服务器
   serverApp.listen(PORT, () => {
+    console.log(`服务器启动，端口: ${PORT}`);
   });
 
   // 加载应用
   mainWindow.loadURL(`http://localhost:${PORT}`);
 
+  // 处理页面加载错误
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('页面加载失败:', errorCode, errorDescription);
+  });
+
   // 应用加载完成后检查更新
   mainWindow.webContents.once('dom-ready', () => {
     checkForUpdates();
-  });
-
-  mainWindow.on('closed', function () {
-    mainWindow = null;
   });
 });
 
@@ -172,7 +195,7 @@ app.on('window-all-closed', function () {
 
 app.on('activate', function () {
   if (mainWindow === null) {
-    createWindow();
+    mainWindow = createWindow();
   }
 });
 
