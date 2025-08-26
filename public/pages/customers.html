@@ -1,370 +1,325 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>客户资料管理系统 - 客户管理</title>
-  <link rel="stylesheet" href="/lib/antd.min.css">
-  <link rel="stylesheet" href="../css/style.css">
-  <script src="/lib/antd.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客户管理 - CRM系统</title>
+    <link rel="stylesheet" href="/lib/antd.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .customer-photo {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .customer-table .ant-table-cell {
+            padding: 8px 12px;
+        }
+        .action-buttons .ant-btn {
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+        .photo-cell {
+            text-align: center;
+        }
+        .ant-table-pagination {
+            margin: 16px 0;
+        }
+        .search-box {
+            margin-bottom: 16px;
+        }
+        .search-box .ant-input-search {
+            width: 300px;
+            margin-right: 12px;
+        }
+        .header-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .toolbar-left, .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .stats-card {
+            min-width: 120px;
+        }
+        .filter-tag {
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        .export-btn {
+            margin-left: 8px;
+        }
+        @media (max-width: 768px) {
+            .header-toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .toolbar-left, .toolbar-right {
+                justify-content: center;
+            }
+            .search-box .ant-input-search {
+                width: 100%;
+            }
+        }
+        /* 更新按钮样式 */
+        #checkUpdateBtn {
+            margin-left: 8px;
+        }
+    </style>
 </head>
 <body>
-  <!-- 页面头部 -->
-  <div class="ant-layout-header">
-    <div class="ant-pro-global-header">
-      <div class="ant-pro-global-header-content">
-        <div class="ant-pro-global-header-logo">客户资料管理系统</div>
-        <div class="ant-pro-global-header-right">
-          <span class="ant-pro-global-header-index-right" id="current-user">用户名</span>
-          <button id="logout-button" class="ant-btn ant-btn-danger">退出登录</button>
+    <div id="root">
+        <div class="layout">
+            <!-- 侧边栏 -->
+            <div class="sidebar">
+                <div class="logo">
+                    <h2>CRM系统</h2>
+                </div>
+                <ul class="nav">
+                    <li><a href="/pages/customers.html" class="active">客户管理</a></li>
+                    <li><a href="/pages/sales.html">销售记录</a></li>
+                    <li><a href="/pages/points.html">积分管理</a></li>
+                    <li><a href="/pages/visits.html">回访记录</a></li>
+                </ul>
+                <div class="user-info">
+                    <div class="user-details">
+                        <span id="username">用户</span>
+                        <button id="logoutBtn" class="btn btn-logout">退出</button>
+                        <button id="checkUpdateBtn" class="btn btn-secondary">检查更新</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主内容区 -->
+            <div class="main-content">
+                <div class="header">
+                    <h1>客户管理</h1>
+                </div>
+
+                <div class="content">
+                    <div class="header-toolbar">
+                        <div class="toolbar-left">
+                            <button id="addCustomerBtn" class="btn btn-primary">添加客户</button>
+                            <button id="importBtn" class="btn btn-secondary">导入客户</button>
+                            <div class="search-box">
+                                <input type="text" id="searchInput" placeholder="搜索客户姓名、电话..." class="ant-input-search">
+                            </div>
+                        </div>
+                        <div class="toolbar-right">
+                            <div id="statsContainer"></div>
+                            <button id="exportBtn" class="btn btn-secondary export-btn">导出</button>
+                        </div>
+                    </div>
+
+                    <div id="filterTags"></div>
+
+                    <div class="table-container">
+                        <table id="customerTable" class="customer-table">
+                            <thead>
+                                <tr>
+                                    <th>照片</th>
+                                    <th>姓名</th>
+                                    <th>电话</th>
+                                    <th>年龄</th>
+                                    <th>身高</th>
+                                    <th>上次消费</th>
+                                    <th>总消费</th>
+                                    <th>消费次数</th>
+                                    <th>可用积分</th>
+                                    <th>上次回访</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="customerTableBody">
+                                <!-- 客户数据将通过JavaScript动态加载 -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div id="paginationContainer"></div>
+                </div>
+            </div>
         </div>
-      </div>
     </div>
-  </div>
-  
-  <div class="ant-pro-basicLayout-content">
-    <div class="ant-pro-basicLayout-children-content-wrap">
-      <!-- 左侧菜单 -->
-      <div class="ant-layout-sider">
-        <ul class="ant-menu ant-menu-root ant-menu-inline">
-          <li class="ant-menu-item ant-menu-item-selected">
-            <a href="/pages/customers.html" class="ant-menu-item-link">客户管理</a>
-          </li>
-          <li class="ant-menu-item">
-            <a href="/pages/sales.html" class="ant-menu-item-link">销售管理</a>
-          </li>
-          <li class="ant-menu-item">
-            <a href="/pages/points.html" class="ant-menu-item-link">积分管理</a>
-          </li>
-          <li class="ant-menu-item">
-            <a href="/pages/visits.html" class="ant-menu-item-link">回访管理</a>
-          </li>
-        </ul>
-      </div>
-      
-      <!-- 主要内容 -->
-      <div class="ant-layout-content">
-        <div class="ant-pro-page-container">
-          <h2 class="ant-typography">客户管理</h2>
-          
-          <!-- 工具栏 -->
-          <div class="ant-pro-table-search" style="display: flex; justify-content: space-between;">
-            <div class="ant-space ant-space-horizontal ant-space-align-center">
-              <button id="create-customer-btn" class="ant-btn ant-btn-primary">新建</button>
-              <button id="export-customers-btn" class="ant-btn ant-btn-primary" style="margin-left: 8px;">导出</button>
-            </div>
-            <div class="ant-pro-table-search-query-filter" style="display: flex; align-items: center;">
-              <div class="ant-input-group" style="margin-right: 10px; display: flex; align-items: center;">
-                <select id="employee-select" class="ant-input" style="width: 160px; margin-right: 8px;">
-                  <option value="">归属员工</option>
-                  <option value="赵春燕">赵春燕</option>
-                  <option value="余夏莲">余夏莲</option>
-                  <option value="赵秀丽">赵秀丽</option>
-                  <option value="其他">其他</option>
-                </select>
-                <input type="text" id="employee-other-input" class="ant-input" placeholder="请输入员工姓名" style="width: 160px; margin-right: 8px; display: none;">
-                <input type="text" id="search-input" placeholder="输入电话或姓名..." class="ant-input">
-                <button id="search-btn" class="ant-btn ant-btn-primary">搜索</button>
-              </div>
-              <button id="toggle-columns-btn" class="ant-btn">显示/隐藏字段</button>
-            </div>
-          </div>      
-          <!-- 客户列表 -->
-          <div class="ant-table">
-            <table id="customers-table" class="ant-table-content">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>姓名</th>
-                  <th>电话</th>
-                  <th>照片</th>
-                  <th>年龄</th>
-                  <th>身高</th>
-                  <th>上衣码数</th>
-                  <th>下衣码数</th>
-                  <th>体型</th>
-                  <th>特征</th>
-                  <th>接待</th>
-                  <th>性格</th>
-                  <th>偏爱色系</th>
-                  <th>偏爱风格</th>
-                  <th>陪同</th>
-                  <th>归属部门</th>
-                  <th>归属员工</th>
-                  <th>建档日期</th>
-                  <th>消费金额</th>
-                  <th>消费数量</th>
-                  <th>消费次数</th>
-                  <th>累计积分</th>
-                  <th>可用积分</th>
-                  <th>最近消费</th>
-                </tr>
-              </thead>
-              <tbody id="customers-list">
-                <!-- 客户数据将通过JavaScript动态加载 -->
-              </tbody>
-            </table>
-          </div>
-          
-          <!-- 分页控件 -->
-          <div id="pagination" class="pagination">
-            <!-- 分页内容将通过JavaScript动态加载 -->
-          </div>
+
+    <!-- 添加/编辑客户模态框 -->
+    <div id="customerModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modalTitle">添加客户</h2>
+            <form id="customerForm">
+                <input type="hidden" id="customerId">
+                <div class="form-group">
+                    <label for="name">姓名 *</label>
+                    <input type="text" id="name" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="phone">电话 *</label>
+                    <input type="tel" id="phone" name="phone" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="age">年龄</label>
+                        <input type="number" id="age" name="age">
+                    </div>
+                    <div class="form-group">
+                        <label for="height">身高</label>
+                        <input type="text" id="height" name="height">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="upperSize">上装尺码</label>
+                        <input type="text" id="upperSize" name="upperSize">
+                    </div>
+                    <div class="form-group">
+                        <label for="lowerSize">下装尺码</label>
+                        <input type="text" id="lowerSize" name="lowerSize">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="bodyType">体型</label>
+                    <input type="text" id="bodyType" name="bodyType">
+                </div>
+                <div class="form-group">
+                    <label for="features">特征</label>
+                    <input type="text" id="features" name="features">
+                </div>
+                <div class="form-group">
+                    <label for="reception">接待人</label>
+                    <input type="text" id="reception" name="reception">
+                </div>
+                <div class="form-group">
+                    <label for="personality">性格</label>
+                    <input type="text" id="personality" name="personality">
+                </div>
+                <div class="form-group">
+                    <label for="preferredColors">偏爱颜色</label>
+                    <input type="text" id="preferredColors" name="preferredColors">
+                </div>
+                <div class="form-group">
+                    <label for="preferredStyles">偏爱款式</label>
+                    <input type="text" id="preferredStyles" name="preferredStyles">
+                </div>
+                <div class="form-group">
+                    <label for="accompaniment">陪伴人物</label>
+                    <input type="text" id="accompaniment" name="accompaniment">
+                </div>
+                <div class="form-group">
+                    <label for="department">部门</label>
+                    <input type="text" id="department" name="department">
+                </div>
+                <div class="form-group">
+                    <label for="employee">员工</label>
+                    <input type="text" id="employee" name="employee">
+                </div>
+                <div class="form-group">
+                    <label for="registrationDate">登记日期</label>
+                    <input type="date" id="registrationDate" name="registrationDate">
+                </div>
+                <div class="form-group">
+                    <label for="photo">照片</label>
+                    <input type="file" id="photo" name="photo" accept="image/*">
+                    <div id="photoPreview"></div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                    <button type="button" class="btn btn-secondary" id="cancelBtn">取消</button>
+                </div>
+            </form>
         </div>
-      </div>
     </div>
-  </div>
-  
-  <!-- 新建/编辑客户模态框 -->
-  <div id="customer-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 class="modal-title" id="modal-title">新建客户</h3>
-        <span class="modal-close">&times;</span>
-      </div>
-      <div class="modal-body">
-        <form id="customer-form">
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="customer-name">姓名 *</label>
-              <input type="text" id="customer-name" name="name" required>
-            </div>
-            <div class="form-group">
-              <label for="customer-phone">电话 *</label>
-              <input type="text" id="customer-phone" name="phone" required>
-            </div>
-            <div class="form-group">
-              <label for="customer-age">年龄</label>
-              <input type="number" id="customer-age" name="age">
-            </div>
-            <div class="form-group">
-              <label for="customer-height">身高</label>
-              <input type="text" id="customer-height" name="height">
-            </div>
-            <div class="form-group">
-              <label for="customer-upper-size">上衣码数</label>
-              <select id="customer-upper-size" name="upper_size">
-                <option value="">请选择</option>
-                <option value="1码">1码</option>
-                <option value="2码">2码</option>
-                <option value="3码">3码</option>
-                <option value="4码">4码</option>
-                <option value="5码">5码</option>
-                <option value="6码">6码</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="customer-lower-size">下衣码数</label>
-              <select id="customer-lower-size" name="lower_size">
-                <option value="">请选择</option>
-                <option value="1码">1码</option>
-                <option value="2码">2码</option>
-                <option value="3码">3码</option>
-                <option value="4码">4码</option>
-                <option value="5码">5码</option>
-                <option value="6码">6码</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="customer-body-type">体型</label>
-              <select id="customer-body-type" name="body_type">
-                <option value="">请选择</option>
-                <option value="S型：三围曲线明显">S型：三围曲线明显</option>
-                <option value="A型：上身苗条，下身发胖">A型：上身苗条，下身发胖</option>
-                <option value="V型：上身宽大，下身纤细">V型：上身宽大，下身纤细</option>
-                <option value="O型：上下正常，腰部圆润">O型：上下正常，腰部圆润</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="customer-features">特征</label>
-              <input type="text" id="customer-features" name="features">
-            </div>
-            <div class="form-group">
-              <label for="customer-reception">接待</label>
-              <select id="customer-reception" name="reception">
-                <option value="">请选择</option>
-                <option value="犹豫型">犹豫型</option>
-                <option value="冲动型">冲动型</option>
-                <option value="理智型">理智型</option>
-                <option value="推荐型">推荐型</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="customer-personality">性格</label>
-              <input type="text" id="customer-personality" name="personality" readonly>
-            </div>
-            <div class="form-group">
-              <label for="customer-color-preference">偏爱色系</label>
-              <div class="custom-select">
-                <select id="customer-color-preference" name="color_preference" multiple>
-                  <option value="黑白">黑白</option>
-                  <option value="深色">深色</option>
-                  <option value="浅色">浅色</option>
-                  <option value="其他">其他</option>
-                </select>
-                <div class="select-options"></div>
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="customer-style-preference">偏爱风格</label>
-              <div class="custom-select">
-                <select id="customer-style-preference" name="style_preference" multiple>
-                  <option value="个性时尚">个性时尚</option>
-                  <option value="职业气质">职业气质</option>
-                  <option value="简单大方">简单大方</option>
-                  <option value="甜美女人">甜美女人</option>
-                  <option value="中性休闲">中性休闲</option>
-                  <option value="其他">其他</option>
-                </select>
-                <div class="select-options"></div>
-              </div>
-            </div>
-            <div class="form-group">
-              <label for="customer-accompaniment">陪同</label>
-              <input type="text" id="customer-accompaniment" name="accompaniment">
-            </div>
-            <div class="form-group">
-              <label for="customer-department">归属部门</label>
-              <select id="customer-department" name="department">
-                <option value="成都青羊光华店" selected>成都青羊光华店</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="customer-employee">归属员工</label>
-              <select id="customer-employee" name="employee">
-                <option value="">请选择</option>
-                <option value="赵春燕">赵春燕</option>
-                <option value="余夏莲">余夏莲</option>
-                <option value="赵秀丽">赵秀丽</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="customer-registration-date">建档日期</label>
-              <input type="date" id="customer-registration-date" name="registration_date">
-            </div>
-            <div class="form-group">
-              <label for="customer-photo">客户照片</label>
-              <input type="file" id="customer-photo" accept="image/*" onchange="previewPhoto()">
-              <div class="file-upload-warning">图片大小不应超过10MB，超过2MB将自动压缩</div>
-              <div id="photo-preview"></div>
-            </div>
-          </div>
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button id="cancel-customer-btn" class="ant-btn ant-btn">取消</button>
-        <button id="save-customer-btn" class="ant-btn btn-primary">保存</button>
-      </div>
-    </div>
-  </div>
-  
-  <!-- 查看客户详情模态框 -->
-  <div id="customer-detail-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 class="modal-title">客户详情</h3>
-        <span class="modal-close">&times;</span>
-      </div>
-      <div class="modal-body" id="customer-detail-content">
-        <!-- 详情内容将通过JavaScript动态加载 -->
-      </div>
-      <div class="modal-footer">
-        <button id="edit-customer-btn" class="ant-btn ant-btn-primary">编辑</button>
-        <button id="delete-customer-btn" class="ant-btn ant-btn-danger">删除</button>
-        <button id="close-detail-btn" class="ant-btn ant-btn">关闭</button>
-      </div>
-    </div>
-  </div>
-  
-  <!-- 字段显示/隐藏弹窗 -->
-  <div id="columns-modal" class="modal">
-    <div class="modal-content" style="max-width: 600px;">
-      <div class="modal-header">
-        <h3 class="modal-title">字段显示/隐藏设置</h3>
-        <span class="modal-close">&times;</span>
-      </div>
-      <div class="modal-body">
-        <div id="column-toggles" class="checkbox-group" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-          <!-- 字段复选框将通过JavaScript动态生成 -->
+
+    <!-- 查看客户详情模态框 -->
+    <div id="viewCustomerModal" class="modal">
+        <div class="modal-content large">
+            <span class="close">&times;</span>
+            <h2>客户详情</h2>
+            <div id="customerDetails"></div>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button id="reset-columns-btn" class="ant-btn">重置</button>
-        <button id="apply-columns-btn" class="ant-btn ant-btn-primary">应用</button>
-      </div>
     </div>
-  </div>
-  
-  <!-- 新增回访记录弹窗 -->
-  <div id="visit-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 class="modal-title">新增回访记录</h3>
-        <span class="modal-close">&times;</span>
-      </div>
-      <div class="modal-body">
-        <form id="visit-form">
-          <input type="hidden" id="visit-customer-id">
-          <div class="form-group">
-            <label for="visit-customer-name">客户姓名</label>
-            <input type="text" id="visit-customer-name" readonly>
-          </div>
-          <div class="form-group">
-            <label for="visit-customer-phone">客户电话</label>
-            <input type="text" id="visit-customer-phone" readonly>
-          </div>
-          <div class="form-group">
-            <label for="visit-date">回访日期 *</label>
-            <input type="date" id="visit-date" required>
-          </div>
-          <div class="form-group">
-            <label for="visit-type">回访方式 *</label>
-            <select id="visit-type" required>
-              <option value="">请选择回访方式</option>
-              <option value="电话">电话</option>
-              <option value="短信">短信</option>
-              <option value="微信">微信</option>
-              <option value="上门">上门</option>
-              <option value="其他">其他</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="visit-purpose">回访目的</label>
-            <select id="visit-purpose">
-              <option value="">请选择回访目的</option>
-              <option value="产品介绍">产品介绍</option>
-              <option value="活动邀请">活动邀请</option>
-              <option value="满意度调查">满意度调查</option>
-              <option value="售后跟进">售后跟进</option>
-              <option value="生日祝福">生日祝福</option>
-              <option value="其他">其他</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="visit-result">回访结果</label>
-            <select id="visit-result">
-              <option value="">请选择回访结果</option>
-              <option value="有意向">有意向</option>
-              <option value="考虑中">考虑中</option>
-              <option value="需要再次回访">需要再次回访</option>
-              <option value="无意向">无意向</option>
-              <option value="未接通">未接通</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="visit-notes">回访备注</label>
-            <textarea id="visit-notes" rows="4"></textarea>
-          </div>
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button id="cancel-visit-btn" class="ant-btn">取消</button>
-        <button id="save-visit-btn" class="ant-btn ant-btn-primary">保存</button>
-      </div>
+
+    <!-- 消费记录模态框 -->
+    <div id="consumptionModal" class="modal">
+        <div class="modal-content large">
+            <span class="close">&times;</span>
+            <h2>消费记录</h2>
+            <div id="consumptionDetails"></div>
+        </div>
     </div>
-  </div>
-  
-  <script src="../js/common.js"></script>
-  <script src="../js/customers.js"></script>
+
+    <!-- 积分记录模态框 -->
+    <div id="pointsModal" class="modal">
+        <div class="modal-content large">
+            <span class="close">&times;</span>
+            <h2>积分记录</h2>
+            <div id="pointsDetails"></div>
+        </div>
+    </div>
+
+    <!-- 回访记录模态框 -->
+    <div id="visitsModal" class="modal">
+        <div class="modal-content large">
+            <span class="close">&times;</span>
+            <h2>回访记录</h2>
+            <div id="visitsDetails"></div>
+        </div>
+    </div>
+
+    <!-- 导入客户模态框 -->
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>导入客户</h2>
+            <form id="importForm">
+                <div class="form-group">
+                    <label for="importFile">选择CSV文件 *</label>
+                    <input type="file" id="importFile" name="importFile" accept=".csv" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">导入</button>
+                    <button type="button" class="btn btn-secondary" id="cancelImportBtn">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 更新提示模态框 -->
+    <div id="updateModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>应用更新</h2>
+            <div id="updateMessage"></div>
+            <div class="form-actions">
+                <button id="confirmUpdateBtn" class="btn btn-primary" style="display:none;">确认更新</button>
+                <button id="cancelUpdateBtn" class="btn btn-secondary">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/lib/antd.min.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/updater.js"></script>
+    <script src="/js/customers.js"></script>
+    
+    <script>
+        // 添加检查更新按钮事件监听
+        document.addEventListener('DOMContentLoaded', function() {
+            const checkUpdateBtn = document.getElementById('checkUpdateBtn');
+            if (checkUpdateBtn) {
+                checkUpdateBtn.addEventListener('click', function() {
+                    window.autoUpdater.checkForUpdates();
+                });
+            }
+        });
+    </script>
 </body>
 </html>

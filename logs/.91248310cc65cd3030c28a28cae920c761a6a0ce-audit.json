@@ -1,0 +1,20 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "D:\\MyCode\\crm - 0824\\logs\\.91248310cc65cd3030c28a28cae920c761a6a0ce-audit.json",
+    "files": [
+        {
+            "date": 1756024695690,
+            "name": "D:\\MyCode\\crm - 0824\\logs\\exceptions-2025-08-24.log",
+            "hash": "d9fe02e432fd95109bb97545117674fb89598cc786e4538324f4a9683ee48e02"
+        },
+        {
+            "date": 1756184316841,
+            "name": "D:\\MyCode\\crm - 0824\\logs\\exceptions-2025-08-26.log",
+            "hash": "8450fe8b93e111f9507d24cf1d685a951fca7237e571520d1b4d4c2154a26adf"
+        }
+    ],
+    "hashType": "sha256"
+}

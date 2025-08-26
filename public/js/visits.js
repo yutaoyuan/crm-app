@@ -1,7 +1,7 @@
 // 全局变量
 let visits = []; // 回访记录数据
 let currentPage = 1;
-let pageSize = 10;
+let pageSize = parseInt(localStorage.getItem('visitsPageSize')) || 10; // 优先读取本地存储
 let totalPages = 1;
 let totalVisits = 0;
 let currentSearchTerm = ''; // 当前搜索关键词
@@ -260,8 +260,124 @@ function renderPagination() {
   if (totalPages <= 1) {
     return; // 只有一页，不显示分页控件
   }
-  
-  renderCommonPagination(currentPage, totalPages, goToPage, paginationContainer);
+  const paginationEl = document.createElement('div');
+  paginationEl.className = 'pagination-container';
+  // 首页
+  const firstBtn = document.createElement('button');
+  firstBtn.className = `pagination-button ${currentPage === 1 ? 'disabled' : ''}`;
+  firstBtn.textContent = '首页';
+  firstBtn.disabled = currentPage === 1;
+  firstBtn.addEventListener('click', () => goToPage(1));
+  paginationEl.appendChild(firstBtn);
+  // 上一页
+  const prevBtn = document.createElement('button');
+  prevBtn.className = `pagination-button ${currentPage === 1 ? 'disabled' : ''}`;
+  prevBtn.textContent = '上一页';
+  prevBtn.disabled = currentPage === 1;
+  prevBtn.addEventListener('click', () => goToPage(currentPage - 1));
+  paginationEl.appendChild(prevBtn);
+  // 页码按钮
+  const maxPageButtons = 7;
+  let startPage = Math.max(1, currentPage - Math.floor(maxPageButtons / 2));
+  let endPage = Math.min(totalPages, startPage + maxPageButtons - 1);
+  if (endPage - startPage + 1 < maxPageButtons && startPage > 1) {
+    startPage = Math.max(1, endPage - maxPageButtons + 1);
+  }
+  if (startPage > 1) {
+    const ellipsis = document.createElement('span');
+    ellipsis.className = 'pagination-ellipsis';
+    ellipsis.textContent = '...';
+    paginationEl.appendChild(ellipsis);
+  }
+  for (let i = startPage; i <= endPage; i++) {
+    const pageBtn = document.createElement('button');
+    pageBtn.className = `pagination-button ${i === currentPage ? 'active' : ''}`;
+    pageBtn.textContent = i;
+    pageBtn.addEventListener('click', () => goToPage(i));
+    paginationEl.appendChild(pageBtn);
+  }
+  if (endPage < totalPages) {
+    const ellipsis = document.createElement('span');
+    ellipsis.className = 'pagination-ellipsis';
+    ellipsis.textContent = '...';
+    paginationEl.appendChild(ellipsis);
+  }
+  // 下一页
+  const nextBtn = document.createElement('button');
+  nextBtn.className = `pagination-button ${currentPage === totalPages ? 'disabled' : ''}`;
+  nextBtn.textContent = '下一页';
+  nextBtn.disabled = currentPage === totalPages;
+  nextBtn.addEventListener('click', () => goToPage(currentPage + 1));
+  paginationEl.appendChild(nextBtn);
+  // 末页
+  const lastBtn = document.createElement('button');
+  lastBtn.className = `pagination-button ${currentPage === totalPages ? 'disabled' : ''}`;
+  lastBtn.textContent = '末页';
+  lastBtn.disabled = currentPage === totalPages;
+  lastBtn.addEventListener('click', () => goToPage(totalPages));
+  paginationEl.appendChild(lastBtn);
+  // 跳转
+  const pageJump = document.createElement('div');
+  pageJump.className = 'pagination-jump';
+  pageJump.innerHTML = `
+    <span>跳转到</span>
+    <input type="number" min="1" max="${totalPages}" value="${currentPage}" id="page-jump-input">
+    <span>页</span>
+    <button class="pagination-button" id="page-jump-btn">跳转</button>
+  `;
+  paginationEl.appendChild(pageJump);
+  // 分页信息
+  const pageInfo = document.createElement('div');
+  pageInfo.className = 'pagination-info';
+  pageInfo.textContent = `${currentPage}/${totalPages}页，共${totalVisits}条记录`;
+  paginationEl.appendChild(pageInfo);
+  // 添加每页条数选择控件
+  const pageSizeSelect = document.createElement('select');
+  pageSizeSelect.className = 'pagination-size-select';
+  pageSizeSelect.style.display = 'inline-block';
+  pageSizeSelect.style.width = 'auto';
+  pageSizeSelect.style.minWidth = '80px';
+  pageSizeSelect.style.padding = '0 16px 0 8px';
+  pageSizeSelect.style.marginRight = '8px';
+  pageSizeSelect.style.verticalAlign = 'middle';
+  pageSizeSelect.style.height = '32px';
+  pageSizeSelect.style.fontSize = '14px';
+  [10, 20, 50, 100].forEach(size => {
+    const option = document.createElement('option');
+    option.value = size;
+    option.textContent = `${size} 条/页`;
+    if (size === pageSize) option.selected = true;
+    pageSizeSelect.appendChild(option);
+  });
+  pageSizeSelect.addEventListener('change', function() {
+    pageSize = parseInt(this.value);
+    localStorage.setItem('visitsPageSize', pageSize); // 新增：保存到本地存储
+    currentPage = 1;
+    pageCache = {}; // 新增：切换每页条数时清空缓存，确保数据刷新
+    loadVisits();
+  });
+  paginationEl.insertBefore(pageSizeSelect, paginationEl.firstChild);
+  // 保证分页容器为flex布局
+  paginationEl.style.display = 'flex';
+  paginationEl.style.alignItems = 'center';
+  paginationEl.style.gap = '8px';
+  paginationContainer.appendChild(paginationEl);
+  // 跳转按钮事件
+  document.getElementById('page-jump-btn').addEventListener('click', () => {
+    const input = document.getElementById('page-jump-input');
+    const page = parseInt(input.value);
+    if (page && page >= 1 && page <= totalPages) {
+      goToPage(page);
+    } else {
+      showAlert(`请输入1-${totalPages}之间的页码`, 'warning');
+      input.value = currentPage;
+    }
+  });
+  document.getElementById('page-jump-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      document.getElementById('page-jump-btn').click();
+    }
+  });
 }
 
 // 页面跳转

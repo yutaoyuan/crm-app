@@ -1,7 +1,7 @@
 // Global variables
 let currentPage = 1;
 let totalPages = 1;
-let pageSize = 10;
+let pageSize = parseInt(localStorage.getItem('pointsPageSize')) || 10;
 let searchQuery = '';
 let currentCustomerId = null;
 let isLoading = false;
@@ -485,6 +485,36 @@ function renderPagination() {
     pageInfo.className = 'pagination-info';
     pageInfo.textContent = `${currentPage}/${totalPages}页，共${totalPoints || 0}条记录`;
     paginationEl.appendChild(pageInfo);
+  
+    // 添加每页条数选择控件
+    const pageSizeSelect = document.createElement('select');
+    pageSizeSelect.className = 'pagination-size-select';
+    pageSizeSelect.style.display = 'inline-block';
+    pageSizeSelect.style.width = 'auto';
+    pageSizeSelect.style.minWidth = '80px';
+    pageSizeSelect.style.padding = '0 16px 0 8px';
+    pageSizeSelect.style.marginRight = '8px';
+    pageSizeSelect.style.verticalAlign = 'middle';
+    pageSizeSelect.style.height = '32px';
+    pageSizeSelect.style.fontSize = '14px';
+    [10, 20, 50, 100].forEach(size => {
+      const option = document.createElement('option');
+      option.value = size;
+      option.textContent = `${size} 条/页`;
+      if (size === pageSize) option.selected = true;
+      pageSizeSelect.appendChild(option);
+    });
+    pageSizeSelect.addEventListener('change', function() {
+      pageSize = parseInt(this.value);
+      localStorage.setItem('pointsPageSize', pageSize);
+      currentPage = 1;
+      loadPoints();
+    });
+    paginationEl.insertBefore(pageSizeSelect, paginationEl.firstChild);
+    // 保证分页容器为flex布局
+    paginationEl.style.display = 'flex';
+    paginationEl.style.alignItems = 'center';
+    paginationEl.style.gap = '8px';
   
     paginationContainer.appendChild(paginationEl);
   

@@ -7,10 +7,14 @@ const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
 const path = require('path');
 const cors = require('cors');
+const compression = require('compression');
 const { db, init, setupTriggers } = require('./models/db');
 const cookieParser = require('cookie-parser');
-const logger = require('morgan');
+const morganLogger = require('morgan');
 const { isAuthenticated } = require('./middleware/auth');
+const { globalErrorHandler, notFoundHandler, initErrorHandling } = require('./middleware/errorHandler');
+const { logger, logApiAccess, logError } = require('./utils/logger');
+const { helmetConfig, apiRateLimit, sessionSecurityConfig, sessionTimeoutCheck, requestLogger } = require('./middleware/security');
 const net = require('net');
 
 // 导入路由
@@ -44,12 +48,33 @@ function findAvailablePort(startPort) {
 }
 
 // 配置中间件
-app.use(logger('dev', {
+// 安全中间件
+app.use(helmetConfig);
+
+// 启用Gzip压缩
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
+  level: 6, // 压缩级别 1-9，6是默认值，平衡压缩率和速度
+  threshold: 1024 // 只压缩大于1KB的响应
+}));
+
+app.use(morganLogger('dev', {
   charset: 'utf-8'
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 app.use(cookieParser());
+
+// 请求日志中间件
+app.use(requestLogger);
+
+// API访问日志中间件
+app.use(logApiAccess);
 
 // 更详细的CORS配置
 app.use(cors({
@@ -72,28 +97,42 @@ app.use((req, res, next) => {
   next();
 });
 
-// 配置会话
+// 配置会话（使用安全配置）
 const sessionStorePath = path.join(process.resourcesPath, 'databaseFolder');
 app.use(session({
   store: new SQLiteStore({
     db: 'sessions.db',
     dir: sessionStorePath
   }),
-  secret: 'your-secret-key',
-  resave: true,
-  saveUninitialized: true,
-  cookie: { 
-    secure: false,
-    httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000 // 1天
+  ...sessionSecurityConfig
+}));
+
+// 会话超时检查
+app.use(sessionTimeoutCheck);
+
+// 静态文件配置缓存
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1y', // 缓存时间为1年
+  etag: true, // 启用ETag
+  lastModified: true, // 启用Last-Modified
+  setHeaders: (res, path) => {
+    // 为HTML文件设置较短的缓存时间
+    if (path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'public, max-age=3600'); // 1小时
+    }
+    // 为CSS和JS文件设置较长的缓存时间
+    else if (path.endsWith('.css') || path.endsWith('.js')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1年
+    }
+    // 为图片文件设置中等缓存时间
+    else if (path.match(/\.(jpg|jpeg|png|gif|ico|svg)$/)) {
+      res.setHeader('Cache-Control', 'public, max-age=2592000'); // 30天
+    }
   }
 }));
 
-// 静态文件
-app.use(express.static(path.join(__dirname, 'public')));
-
-// 路由
+// 路由（添加API限流）
+app.use('/api/', apiRateLimit); // API限流
 app.use('/api/auth', authRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/sales', salesRoutes);
@@ -150,23 +189,19 @@ app.get('/pages/visits', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'pages', 'visits.html'));
 });
 
-// Catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  res.status(404).json({ message: 'Not Found' });
-});
+// 错误日志中间件（在全局错误处理之前）
+app.use(logError);
 
-// Error handler
-app.use(function(err, req, res, next) {
-  console.error(err);
-  
-  // Set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
-  
-  // Render the error page
-  res.status(err.status || 500);
-  res.json({ error: err.message });
-});
+// Catch 404 and forward to error handler
+app.use(notFoundHandler);
+
+// Global error handler
+app.use(globalErrorHandler);
+
+// 初始化错误处理
+initErrorHandling();
+
+logger.info('应用启动中...', { version: '1.0.0' });
 
 // 初始化数据库和启动服务器
 init()
@@ -174,13 +209,14 @@ init()
     try {
       PORT = await findAvailablePort(PORT);
       app.listen(PORT, () => {
+        logger.info('服务器启动成功', { port: PORT, env: process.env.NODE_ENV || 'development' });
       });
     } catch (err) {
-      console.error('启动服务器失败:', err);
+      logger.error('启动服务器失败', { error: err.message, stack: err.stack });
     }
   })
   .catch(err => {
-    console.error('数据库初始化失败:', err);
+    logger.error('数据库初始化失败', { error: err.message, stack: err.stack });
   });
 
 module.exports = { app, PORT }; 

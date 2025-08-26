@@ -334,23 +334,27 @@ router.post('/', isAuthenticated, (req, res) => {
     const parsedAmount = parseFloat(amount) || 0;
     const parsedQuantity = parseInt(quantity) || 0;
     
-    console.log(`开始更新客户ID: ${customerId} 的消费信息，金额: ${parsedAmount}，数量: ${parsedQuantity}`);
+    console.log(`开始更新客户ID: ${customerId} 的消费信息，金额: ${parsedAmount}，数量: ${parsedQuantity}，日期: ${date}`);
     
+    // 修改SQL逻辑：只有当新日期比当前last_consumption更晚时才更新最近消费日期
     db.run(`
       UPDATE customers SET
         total_consumption = total_consumption + ?,
         consumption_count = consumption_count + ?,
         consumption_times = consumption_times + 1,
-        last_consumption = ?
+        last_consumption = CASE 
+          WHEN last_consumption IS NULL OR last_consumption = '' OR ? > last_consumption THEN ?
+          ELSE last_consumption
+        END
       WHERE id = ?
-    `, [parsedAmount, parsedQuantity, date, customerId], function(err) {
+    `, [parsedAmount, parsedQuantity, date, date, customerId], function(err) {
       if (err) {
         console.error(`更新客户消费信息失败:`, err);
       } else {
         console.log(`成功更新客户ID: ${customerId} 的消费信息`);
         
         // 验证更新是否生效
-        db.get('SELECT total_consumption, consumption_count, consumption_times FROM customers WHERE id = ?', [customerId], (err, result) => {
+        db.get('SELECT total_consumption, consumption_count, consumption_times, last_consumption FROM customers WHERE id = ?', [customerId], (err, result) => {
           if (err) {
             console.error('获取更新后的客户信息失败:', err);
           } else {
@@ -1080,7 +1084,10 @@ async function processBatch(batch, task) {
             total_consumption = total_consumption + ?,
             consumption_count = consumption_count + ?,
             consumption_times = consumption_times + 1,
-            last_consumption = ?
+            last_consumption = CASE 
+              WHEN last_consumption IS NULL OR last_consumption = '' OR ? > last_consumption THEN ?
+              ELSE last_consumption
+            END
           WHERE id = ?
         `);
         
@@ -1089,6 +1096,7 @@ async function processBatch(batch, task) {
           updateCustomerStmt.run(
             update.amount,
             update.quantity,
+            update.date,
             update.date,
             update.customerId
           );

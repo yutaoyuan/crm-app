@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "/Users/yutaoyuan/Desktop/crm/logs/.c90981c16a36595dc8cb46d69ae421fb66186f34-audit.json",
+    "files": [
+        {
+            "date": 1756220592296,
+            "name": "/Users/yutaoyuan/Desktop/crm/logs/application-2025-08-26.log",
+            "hash": "98b4113add91bd1c196f71db0845771da78e8212d638ed894e660044e1b8f638"
+        }
+    ],
+    "hashType": "sha256"
+}

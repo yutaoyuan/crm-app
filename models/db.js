@@ -205,6 +205,123 @@ const init = () => {
 };
 
 /**
+ * 重新计算客户消费信息
+ * 重新计算客户的消费统计信息，包括：
+ * - total_consumption: 总消费金额
+ * - consumption_count: 消费数量
+ * - consumption_times: 消费次数
+ * - last_consumption: 最近消费日期
+ */
+function recalculateCustomerConsumption(customerId) {
+  return new Promise((resolve, reject) => {
+    if (!customerId) {
+      return resolve(false);
+    }
+    
+    console.log(`开始重新计算客户ID: ${customerId} 的消费信息`);
+    
+    // 查询该客户的所有销售记录统计信息
+    const consumptionQuery = `
+      SELECT 
+        COALESCE(SUM(s.total_amount), 0) as total_consumption,
+        COALESCE(SUM(si.quantity), 0) as consumption_count,
+        COUNT(DISTINCT s.id) as consumption_times,
+        MAX(s.date) as last_consumption
+      FROM sales s
+      LEFT JOIN sales_item si ON s.id = si.sale_id
+      WHERE s.customer_id = ? AND s.total_amount > 0
+    `;
+    
+    db.get(consumptionQuery, [customerId], (err, result) => {
+      if (err) {
+        console.error('查询客户消费统计失败:', err);
+        return reject(err);
+      }
+      
+      const consumptionData = {
+        total_consumption: result?.total_consumption || 0,
+        consumption_count: result?.consumption_count || 0,
+        consumption_times: result?.consumption_times || 0,
+        last_consumption: result?.last_consumption || null
+      };
+      
+      console.log(`客户ID: ${customerId} 的消费统计结果:`, consumptionData);
+      
+      // 更新客户表的消费信息
+      db.run(`
+        UPDATE customers 
+        SET 
+          total_consumption = ?,
+          consumption_count = ?,
+          consumption_times = ?,
+          last_consumption = ?
+        WHERE id = ?
+      `, [
+        consumptionData.total_consumption,
+        consumptionData.consumption_count,
+        consumptionData.consumption_times,
+        consumptionData.last_consumption,
+        customerId
+      ], function(err) {
+        if (err) {
+          console.error(`更新客户消费信息失败:`, err);
+          return reject(err);
+        }
+        
+        console.log(`已重新计算客户ID ${customerId} 的消费信息`);
+        resolve(consumptionData);
+      });
+    });
+  });
+}
+
+/**
+ * 批量重新计算所有客户的消费信息
+ * 用于修复现有数据中的last_consumption字段问题
+ */
+function recalculateAllCustomersConsumption() {
+  return new Promise((resolve, reject) => {
+    console.log('开始批量重新计算所有客户的消费信息...');
+    
+    // 获取所有客户ID
+    db.all('SELECT id FROM customers', [], (err, customers) => {
+      if (err) {
+        console.error('获取客户列表失败:', err);
+        return reject(err);
+      }
+      
+      console.log(`找到 ${customers.length} 个客户，开始重新计算...`);
+      
+      // 创建处理队列
+      const processCustomer = (index) => {
+        if (index >= customers.length) {
+          console.log('所有客户消费信息重新计算完成');
+          return resolve({ 
+            total: customers.length, 
+            message: '所有客户消费信息重新计算完成' 
+          });
+        }
+        
+        const customer = customers[index];
+        recalculateCustomerConsumption(customer.id)
+          .then(() => {
+            // 处理下一个客户
+            processCustomer(index + 1);
+          })
+          .catch(err => {
+            console.error(`重新计算客户ID ${customer.id} 的消费信息失败:`, err);
+            // 继续处理下一个客户，不中断整个过程
+            processCustomer(index + 1);
+          });
+      };
+      
+      // 开始处理第一个客户
+      processCustomer(0);
+    });
+  });
+}
+
+/**
  * 重新计算客户积分
  * 计算累计积分和可用积分：
  * - 累计积分 = 根据销售记录的总消费金额计算
@@ -302,6 +419,8 @@ module.exports = {
   db,
   init,
   recalculateCustomerPoints,
+  recalculateCustomerConsumption,
+  recalculateAllCustomersConsumption,
   setupTriggers,
   knexDb
 }; 

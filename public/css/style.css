@@ -1413,3 +1413,202 @@ textarea:focus {
   padding: 16px;
   z-index: 2;
 }
+
+/* 页面切换标签样式 */
+.page-tabs {
+  display: flex;
+  border-bottom: 1px solid #d9d9d9;
+  margin-bottom: 20px;
+}
+
+.page-tab {
+  padding: 8px 16px;
+  margin-right: 8px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: rgba(0, 0, 0, 0.65);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s;
+  border-radius: 4px 4px 0 0;
+}
+
+.page-tab:hover {
+  color: #1890ff;
+  background-color: rgba(24, 144, 255, 0.04);
+}
+
+.page-tab.active {
+  color: #1890ff;
+  border-bottom-color: #1890ff;
+  background-color: rgba(24, 144, 255, 0.04);
+}
+
+/* 页面内容样式 */
+.page-content {
+  display: none;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.page-content.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 消费详情表格样式 */
+.consumption-details-content {
+  padding: 16px 0;
+}
+
+.consumption-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  background-color: white;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.consumption-table th {
+  background-color: #fafafa;
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+  border-bottom: 1px solid #f0f0f0;
+  white-space: nowrap;
+}
+
+.consumption-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.consumption-table tr:hover {
+  background-color: #fafafa;
+}
+
+.consumption-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 消费记录分组样式 */
+.consumption-group {
+  margin-bottom: 24px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.consumption-group-header {
+  background-color: #f6f8fa;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.consumption-group-title {
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.consumption-group-info {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}
+
+.consumption-group-content {
+  padding: 0;
+}
+
+/* 空状态样式 */
+.consumption-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.consumption-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.3;
+}
+
+.consumption-empty-text {
+  font-size: 14px;
+}
+
+/* 回访记录表格样式 */
+.visit-records-content {
+  padding: 16px 0;
+}
+
+.visit-records-table-container {
+  margin-top: 16px;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.visit-records-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: white;
+}
+
+.visit-records-table th {
+  background-color: #fafafa;
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+  border-bottom: 1px solid #f0f0f0;
+  white-space: nowrap;
+}
+
+.visit-records-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  color: rgba(0, 0, 0, 0.65);
+  vertical-align: top;
+}
+
+.visit-records-table tr:hover {
+  background-color: #fafafa;
+}
+
+.visit-records-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 回访记录空状态样式 */
+.visit-records-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.visit-records-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.3;
+}
+
+.visit-records-empty-text {
+  font-size: 14px;
+}

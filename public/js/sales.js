@@ -2,7 +2,7 @@
 let sales = {}; // 修改为对象，用于存储销售数据缓存
 let currentSaleId = null;
 let currentPage = 1;
-let pageSize = 10; // 每页显示10条记录
+let pageSize = parseInt(localStorage.getItem('salesPageSize')) || 10; // 优先读取本地存储
 let totalPages = 1;
 let allCustomers = []; // 存储所有客户数据用于搜索
 let selectedCustomer = null; // 当前选择的客户
@@ -348,6 +348,33 @@ function renderPagination() {
     const paginationEl = document.createElement('div');
     paginationEl.className = 'pagination-container';
   
+    // 添加每页条数选择控件
+    const pageSizeSelect = document.createElement('select');
+    pageSizeSelect.className = 'pagination-size-select';
+    pageSizeSelect.style.display = 'inline-block';
+    pageSizeSelect.style.width = 'auto';
+    pageSizeSelect.style.minWidth = '80px';
+    pageSizeSelect.style.padding = '0 16px 0 8px';
+    pageSizeSelect.style.marginRight = '8px';
+    pageSizeSelect.style.verticalAlign = 'middle';
+    pageSizeSelect.style.height = '32px';
+    pageSizeSelect.style.fontSize = '14px';
+    [10, 20, 50, 100].forEach(size => {
+      const option = document.createElement('option');
+      option.value = size;
+      option.textContent = `${size} 条/页`;
+      if (size === pageSize) option.selected = true;
+      pageSizeSelect.appendChild(option);
+    });
+    pageSizeSelect.addEventListener('change', function() {
+      pageSize = parseInt(this.value);
+      localStorage.setItem('salesPageSize', pageSize); // 新增：保存到本地存储
+      currentPage = 1;
+      pageCache = {}; // 新增：切换每页条数时清空缓存，确保数据刷新
+      loadSales();
+    });
+    paginationEl.appendChild(pageSizeSelect);
+  
     // 创建"首页"按钮
     const firstBtn = document.createElement('button');
     firstBtn.className = `pagination-button ${currentPage === 1 ? 'disabled' : ''}`;
@@ -452,6 +479,11 @@ function renderPagination() {
             document.getElementById('page-jump-btn').click();
         }
     });
+  
+    // 保证分页容器为flex布局
+    paginationEl.style.display = 'flex';
+    paginationEl.style.alignItems = 'center';
+    paginationEl.style.gap = '8px';
 }
 
 // 切换页面

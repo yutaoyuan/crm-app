@@ -28,42 +28,114 @@ const upload = multer({
 // 搜索客户
 router.get('/search', isAuthenticated, (req, res) => {
   const { q, employee } = req.query;
+  // 新增分页参数
+  const page = parseInt(req.query.page) || 1;
+  const pageSize = parseInt(req.query.pageSize) || 10;
+  const offset = (page - 1) * pageSize;
+  // 新增排序参数
+  const sortField = req.query.sort || 'id';
+  const sortOrder = req.query.order || 'desc';
 
   if (!q && !employee) {
     return res.status(400).json({ message: '请输入搜索关键词或选择员工' });
   }
 
-  let sql = `
-    SELECT c.*,
-      (SELECT IFNULL(SUM(total_amount), 0) 
-       FROM sales s 
-       WHERE s.customer_id = c.id 
-       AND s.total_amount > 0) as total_points
-    FROM customers c
-    WHERE 1=1
-  `;
-  let params = [];
-
-  if (q) {
-    sql += ' AND (c.name LIKE ? OR c.phone LIKE ?)';
-    params.push(`%${q}%`, `%${q}%`);
+  // 处理排序
+  let orderClause = '';
+  if (sortField === 'id') {
+    orderClause = 'id DESC';
+  } else if (sortField === 'last_visit') {
+    orderClause = `CASE 
+                    WHEN COALESCE(derived_last_visit, last_visit) IS NULL THEN 2 
+                    WHEN COALESCE(derived_last_visit, last_visit) = '' THEN 1
+                    ELSE 0 
+                  END, 
+                  COALESCE(derived_last_visit, last_visit) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, 
+                  id DESC`;
+  } else if (sortField === 'last_consumption') {
+    orderClause = `CASE 
+                    WHEN last_consumption IS NULL THEN 2 
+                    WHEN last_consumption = '' THEN 1
+                    ELSE 0 
+                  END, 
+                  last_consumption ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, 
+                  id DESC`;
+  } else {
+    orderClause = `${sortField} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, id DESC`;
   }
+
+  // 统计总数SQL（修正searchTerm为q）
+  let countSql = q 
+    ? 'SELECT COUNT(*) as total FROM customers WHERE name LIKE ? OR phone LIKE ?' 
+    : 'SELECT COUNT(*) as total FROM customers';
+  let countParams = q ? [`%${q}%`, `%${q}%`] : [];
   if (employee) {
-    sql += ' AND c.employee = ?';
-    params.push(employee);
+    countSql += q ? ' AND employee = ?' : ' WHERE employee = ?';
+    countParams.push(employee);
   }
-  sql += ' ORDER BY c.id DESC';
 
-  db.all(sql, params, (err, customers) => {
+  db.get(countSql, countParams, (err, countResult) => {
     if (err) {
+      console.error('获取客户总数失败:', err);
       return res.status(500).json({ 
-        message: '搜索客户失败', 
+        success: false, 
+        message: '获取客户总数失败', 
         error: err.message 
       });
     }
-    res.json({
-      success: true,
-      data: customers
+    const totalCount = countResult.total;
+    const totalPages = Math.ceil(totalCount / pageSize);
+    // 查询数据SQL
+    let baseSql = `
+      SELECT c.*, 
+        (SELECT created_at FROM customer_visits 
+         WHERE customer_id = c.id 
+         ORDER BY created_at DESC LIMIT 1) as derived_last_visit,
+        (SELECT IFNULL(SUM(total_amount), 0) 
+         FROM sales s 
+         WHERE s.customer_id = c.id 
+         AND s.total_amount > 0) as total_points
+      FROM customers c
+      WHERE 1=1
+    `;
+    let params = [];
+    if (q) {
+      baseSql += ' AND (c.name LIKE ? OR c.phone LIKE ?)';
+      params.push(`%${q}%`, `%${q}%`);
+    }
+    if (employee) {
+      baseSql += ' AND c.employee = ?';
+      params.push(employee);
+    }
+    // 构建排序SQL
+    let sql = `
+      SELECT *, COALESCE(derived_last_visit, last_visit) as last_visit
+      FROM (${baseSql}) AS CustomerData
+      ORDER BY ${orderClause}
+      LIMIT ? OFFSET ?
+    `;
+    params.push(pageSize, offset);
+    db.all(sql, params, (err, customers) => {
+      if (err) {
+        return res.status(500).json({ 
+          message: '搜索客户失败', 
+          error: err.message 
+        });
+      }
+      customers.forEach(c => {
+        c.last_visit = c.derived_last_visit || c.last_visit || null;
+        delete c.derived_last_visit;
+      });
+      res.json({
+        success: true,
+        data: customers,
+        pagination: {
+          total: totalCount,
+          totalPages: totalPages,
+          currentPage: page,
+          pageSize: pageSize
+        }
+      });
     });
   });
 });
@@ -160,16 +232,27 @@ router.get('/', isAuthenticated, (req, res) => {
   const startTime = Date.now();
   
   // 处理排序
-  let orderClause = 'c.id DESC';
-  if (sortField === 'last_visit') {
-    // 修改排序逻辑，使用IFNULL或IS NULL确保空值绝对排在最后
+  let orderClause = '';
+  if (sortField === 'id') {
+    orderClause = 'id DESC';
+  } else if (sortField === 'last_visit') {
     orderClause = `CASE 
-                    WHEN last_visit IS NULL THEN 2 
-                    WHEN last_visit = '' THEN 1
+                    WHEN COALESCE(derived_last_visit, last_visit) IS NULL THEN 2 
+                    WHEN COALESCE(derived_last_visit, last_visit) = '' THEN 1
                     ELSE 0 
                   END, 
-                  last_visit ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, 
-                  c.id DESC`;
+                  COALESCE(derived_last_visit, last_visit) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, 
+                  id DESC`;
+  } else if (sortField === 'last_consumption') {
+    orderClause = `CASE 
+                    WHEN last_consumption IS NULL THEN 2 
+                    WHEN last_consumption = '' THEN 1
+                    ELSE 0 
+                  END, 
+                  last_consumption ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, 
+                  id DESC`;
+  } else {
+    orderClause = `${sortField} ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, id DESC`;
   }
   
   // 查询客户总数 - 使用内联视图进行优化
@@ -221,14 +304,7 @@ router.get('/', isAuthenticated, (req, res) => {
       SELECT *, 
              COALESCE(derived_last_visit, last_visit) as last_visit 
       FROM (${baseSql}) AS CustomerData
-      ORDER BY 
-        CASE 
-          WHEN COALESCE(derived_last_visit, last_visit) IS NULL THEN 2 
-          WHEN COALESCE(derived_last_visit, last_visit) = '' THEN 1
-          ELSE 0 
-        END, 
-        COALESCE(derived_last_visit, last_visit) ${sortOrder === 'asc' ? 'ASC' : 'DESC'}, 
-        id DESC
+      ORDER BY ${orderClause}
       LIMIT ? OFFSET ?
     `;
     params.push(pageSize, offset);
@@ -1434,5 +1510,231 @@ function getDaysInMonth(year, month) {
   // 获取下个月的第0天（即本月的最后一天）
   return new Date(year, jsMonth + 1, 0).getDate();
 }
+
+// 获取客户消费详情
+router.get('/:id/consumption-details', isAuthenticated, (req, res) => {
+  const customerId = req.params.id;
+  
+  if (!customerId) {
+    return res.status(400).json({ 
+      success: false, 
+      message: '客户ID不能为空' 
+    });
+  }
+
+  // 先获取客户信息，主要是phone字段
+  db.get('SELECT phone FROM customers WHERE id = ?', [customerId], (err, customer) => {
+    if (err) {
+      console.error('获取客户信息失败:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: '获取客户信息失败', 
+        error: err.message 
+      });
+    }
+    
+    if (!customer) {
+      return res.status(404).json({ 
+        success: false, 
+        message: '客户不存在' 
+      });
+    }
+
+    // 分两步查询：先查销售记录，再查商品明细
+    // 第一步：查询所有相关的销售记录
+    const salesSql = `
+      SELECT 
+        s.id as sale_id,
+        s.date,
+        s.transaction_number,
+        s.sale_type,
+        s.store,
+        s.salesperson1,
+        s.salesperson2,
+        s.total_amount,
+        s.name as customer_name,
+        s.phone as customer_phone
+      FROM sales s
+      WHERE s.phone = ? OR s.customer_id = ?
+      ORDER BY s.date DESC, s.id DESC
+    `;
+
+    db.all(salesSql, [customer.phone, customerId], (err, salesRows) => {
+      if (err) {
+        console.error('查询销售记录失败:', err);
+        return res.status(500).json({ 
+          success: false, 
+          message: '查询销售记录失败', 
+          error: err.message 
+        });
+      }
+
+      if (!salesRows || salesRows.length === 0) {
+        // 没有销售记录
+        return res.json({
+          success: true,
+          data: [],
+          total: 0
+        });
+      }
+
+      // 第二步：查询所有相关销售记录的商品明细
+      const saleIds = salesRows.map(row => row.sale_id);
+      const placeholders = saleIds.map(() => '?').join(',');
+      
+      const itemsSql = `
+        SELECT 
+          si.sale_id,
+          si.product_code,
+          si.size,
+          si.quantity,
+          si.amount
+        FROM sales_item si
+        WHERE si.sale_id IN (${placeholders})
+        ORDER BY si.sale_id, si.id
+      `;
+
+      db.all(itemsSql, saleIds, (err, itemsRows) => {
+        if (err) {
+          console.error('查询商品明细失败:', err);
+          return res.status(500).json({ 
+            success: false, 
+            message: '查询商品明细失败', 
+            error: err.message 
+          });
+        }
+
+        // 将商品明细按销售记录ID分组
+        const itemsMap = new Map();
+        itemsRows.forEach(item => {
+          if (!itemsMap.has(item.sale_id)) {
+            itemsMap.set(item.sale_id, []);
+          }
+          itemsMap.get(item.sale_id).push({
+            product_code: item.product_code,
+            size: item.size,
+            quantity: item.quantity,
+            amount: item.amount
+          });
+        });
+
+        // 组装最终的消费详情数据
+        const consumptionDetails = salesRows.map(sale => ({
+          sale_id: sale.sale_id,
+          date: sale.date,
+          transaction_number: sale.transaction_number,
+          sale_type: sale.sale_type,
+          store: sale.store,
+          salesperson1: sale.salesperson1,
+          salesperson2: sale.salesperson2,
+          total_amount: sale.total_amount,
+          customer_name: sale.customer_name,
+          customer_phone: sale.customer_phone,
+          items: itemsMap.get(sale.sale_id) || []
+        }));
+
+        console.log(`查询到 ${consumptionDetails.length} 条销售记录，共 ${itemsRows.length} 条商品明细`);
+
+        res.json({
+          success: true,
+          data: consumptionDetails,
+          total: consumptionDetails.length
+        });
+      });
+    });
+  });
+});
+
+// 获取客户回访记录
+router.get('/:id/visits', isAuthenticated, (req, res) => {
+  const customerId = req.params.id;
+  
+  // 首先获取客户的电话号码
+  db.get('SELECT phone FROM customers WHERE id = ?', [customerId], (err, customer) => {
+    if (err) {
+      console.error('获取客户信息失败:', err);
+      return res.status(500).json({ 
+        success: false,
+        message: '获取客户信息失败', 
+        error: err.message 
+      });
+    }
+    
+    if (!customer) {
+      return res.status(404).json({ 
+        success: false,
+        message: '客户不存在' 
+      });
+    }
+    
+    // 根据电话号码查询回访记录
+    const sql = `
+      SELECT 
+        cv.id,
+        cv.visit_date,
+        cv.visit_type,
+        cv.visit_purpose,
+        cv.visit_result,
+        cv.notes,
+        cv.created_at
+      FROM customer_visits cv 
+      WHERE cv.customer_phone = ?
+      ORDER BY cv.created_at DESC
+    `;
+    
+    db.all(sql, [customer.phone], (err, visits) => {
+      if (err) {
+        console.error('获取回访记录失败:', err);
+        return res.status(500).json({ 
+          success: false,
+          message: '获取回访记录失败', 
+          error: err.message 
+        });
+      }
+      
+      console.log(`查询到客户ID ${customerId} (电话: ${customer.phone}) 的 ${visits.length} 条回访记录`);
+      
+      res.json({
+        success: true,
+        data: visits,
+        total: visits.length,
+        customerPhone: customer.phone
+      });
+    });
+  });
+});
+
+// 重新计算客户消费信息
+router.post('/recalculate-consumption', isAuthenticated, async (req, res) => {
+  try {
+    const { customerId } = req.body;
+    const { recalculateCustomerConsumption, recalculateAllCustomersConsumption } = require('../models/db');
+    
+    if (customerId) {
+      // 重新计算单个客户
+      const result = await recalculateCustomerConsumption(customerId);
+      res.json({
+        success: true,
+        message: '客户消费信息重新计算完成',
+        data: result
+      });
+    } else {
+      // 重新计算所有客户
+      const result = await recalculateAllCustomersConsumption();
+      res.json({
+        success: true,
+        message: '所有客户消费信息重新计算完成',
+        data: result
+      });
+    }
+  } catch (error) {
+    console.error('重新计算客户消费信息失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '重新计算失败',
+      error: error.message
+    });
+  }
+});
 
 module.exports = router;

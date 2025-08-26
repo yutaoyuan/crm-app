@@ -26,3 +26,8 @@ yarn-error.log*
 .vscode/
 *.swp
 *.swo 
+node_modules
+
+# Database
+databaseFolder/*.db3
+databaseFolder/*.db

@@ -3,12 +3,13 @@ let customers = []; // 初始化为空数组
 let currentCustomerId = null;
 let isEditing = false;
 let currentPage = 1;
-let pageSize = 10;
+let pageSize = parseInt(localStorage.getItem('customersPageSize')) || 10; // 优先读取本地存储
 let totalPages = 1;
 let totalCustomers = 0;
 // 排序相关变量
-let currentSortField = ''; // 当前排序字段
-let currentSortOrder = ''; // 当前排序顺序：'asc' 或 'desc'
+let currentSortField = 'last_visit'; // 默认排序字段为最近回访
+let currentSortOrder = 'desc'; // 默认降序
+let currentEmployee = '';
 
 // 表格字段配置
 const ALL_COLUMNS = [
@@ -170,6 +171,40 @@ document.addEventListener('DOMContentLoaded', () => {
   // 设置导出按钮点击事件
   document.getElementById('export-customers-btn').addEventListener('click', exportCustomers);
   
+  // 设置修复数据按钮点击事件
+  const fixBtn = document.getElementById('fix-consumption-btn');
+  if (fixBtn) {
+    fixBtn.addEventListener('click', function() {
+      if (confirm('确定要修复所有客户的最近消费数据吗？这可能需要一些时间。')) {
+        this.textContent = '修复中...';
+        this.disabled = true;
+        
+        fetchWithAuth('/api/customers/recalculate-consumption', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: '{}'
+        })
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) {
+            alert(`✅ 修复完成！\n处理了 ${d.data.total} 个客户`);
+            loadCustomers(); // 刷新列表
+          } else {
+            alert('❌ 修复失败: ' + d.message);
+          }
+        })
+        .catch(e => {
+          alert('❌ 网络错误，请稍后重试');
+          console.error(e);
+        })
+        .finally(() => {
+          this.textContent = '修复数据';
+          this.disabled = false;
+        });
+      }
+    });
+  }
+  
   // 全局事件委托 - 处理表格中的"新增回访"按钮
   document.addEventListener('click', function(e) {
     console.log('捕获到点击事件，目标元素:', e.target);
@@ -279,6 +314,12 @@ function initEditButton() {
 let allCustomersLoaded = false;
 
 function loadCustomers(page = currentPage, refreshCache = false, loadAll = false) {
+  // 如果没有排序字段，强制用默认
+  if (!currentSortField) currentSortField = 'last_visit';
+  if (!currentSortOrder) currentSortOrder = 'desc';
+  // 修正：如果currentSortField为id，强制currentSortOrder为desc
+  if (currentSortField === 'id') currentSortOrder = 'desc';
+  
   console.log('加载客户列表，页码:', page, '加载全部:', loadAll);
   
   // 显示加载状态
@@ -296,7 +337,9 @@ function loadCustomers(page = currentPage, refreshCache = false, loadAll = false
   }
   
   // 添加排序条件
-  if (currentSortField && currentSortOrder) {
+  if (currentSortField === 'id') {
+    queryParams += `&sort=id&order=desc`;
+  } else if (currentSortField && currentSortOrder) {
     queryParams += `&sort=${currentSortField}&order=${currentSortOrder}`;
   }
   
@@ -618,7 +661,23 @@ function renderPagination() {
     const pageBtn = document.createElement('button');
     pageBtn.className = `pagination-button ${i === currentPage ? 'active' : ''}`;
     pageBtn.textContent = i;
-    pageBtn.addEventListener('click', () => goToPage(i));
+    pageBtn.addEventListener('click', () => {
+      const employeeSelect = document.getElementById('employee-select');
+      const employeeOtherInput = document.getElementById('employee-other-input');
+      let employee = '';
+      if (employeeSelect) {
+        if (employeeSelect.value === '其他') {
+          employee = employeeOtherInput.value.trim();
+        } else {
+          employee = employeeSelect.value;
+        }
+      }
+      if (employee) {
+        handleSearch(i);
+      } else {
+        goToPage(i);
+      }
+    });
     paginationEl.appendChild(pageBtn);
   }
   
@@ -663,6 +722,51 @@ function renderPagination() {
   pageInfo.textContent = `${currentPage}/${totalPages}页，共${totalCustomers}条记录`;
   paginationEl.appendChild(pageInfo);
   
+  // 添加每页条数选择控件
+  const pageSizeSelect = document.createElement('select');
+  pageSizeSelect.className = 'pagination-size-select';
+  pageSizeSelect.style.display = 'inline-block';
+  pageSizeSelect.style.width = 'auto';
+  pageSizeSelect.style.minWidth = '80px';
+  pageSizeSelect.style.padding = '0 16px 0 8px';
+  pageSizeSelect.style.marginRight = '8px';
+  pageSizeSelect.style.verticalAlign = 'middle';
+  pageSizeSelect.style.height = '32px';
+  pageSizeSelect.style.fontSize = '14px';
+  [10, 20, 50, 100].forEach(size => {
+    const option = document.createElement('option');
+    option.value = size;
+    option.textContent = `${size} 条/页`;
+    if (size === pageSize) option.selected = true;
+    pageSizeSelect.appendChild(option);
+  });
+  pageSizeSelect.addEventListener('change', function() {
+    pageSize = parseInt(this.value);
+    localStorage.setItem('customersPageSize', pageSize); // 新增：保存到本地存储
+    currentPage = 1;
+    // 判断当前是否有归属员工筛选，优先用handleSearch
+    const employeeSelect = document.getElementById('employee-select');
+    const employeeOtherInput = document.getElementById('employee-other-input');
+    let employee = '';
+    if (employeeSelect) {
+      if (employeeSelect.value === '其他') {
+        employee = employeeOtherInput.value.trim();
+      } else {
+        employee = employeeSelect.value;
+      }
+    }
+    if (employee) {
+      handleSearch(1);
+    } else {
+      loadCustomers(1);
+    }
+  });
+  paginationEl.insertBefore(pageSizeSelect, paginationEl.firstChild);
+  // 保证分页容器为flex布局
+  paginationEl.style.display = 'flex';
+  paginationEl.style.alignItems = 'center';
+  paginationEl.style.gap = '8px';
+  
   paginationContainer.appendChild(paginationEl);
   
   // 跳转按钮事件
@@ -670,7 +774,21 @@ function renderPagination() {
     const input = document.getElementById('page-jump-input');
     const page = parseInt(input.value);
     if (page && page >= 1 && page <= totalPages) {
-      goToPage(page);
+      const employeeSelect = document.getElementById('employee-select');
+      const employeeOtherInput = document.getElementById('employee-other-input');
+      let employee = '';
+      if (employeeSelect) {
+        if (employeeSelect.value === '其他') {
+          employee = employeeOtherInput.value.trim();
+        } else {
+          employee = employeeSelect.value;
+        }
+      }
+      if (employee) {
+        handleSearch(page);
+      } else {
+        goToPage(page);
+      }
     } else {
       showAlert(`请输入1-${totalPages}之间的页码`, 'warning');
       input.value = currentPage;
@@ -715,9 +833,8 @@ function showCustomerDetail(customerId) {
   modal.style.display = 'block';
   modal.classList.add('ant-modal-open');
   
-  // 显示加载指示器
-  const detailContent = document.getElementById('customer-detail-content');
-  detailContent.innerHTML = '<div style="text-align: center; padding: 30px;"><div class="spinner"></div><div>加载客户详情...</div></div>';
+  // 初始化页面结构
+  initializeCustomerDetailPages();
   
   // 获取并绑定删除按钮事件
   const deleteBtn = document.getElementById('delete-customer-btn');
@@ -740,88 +857,14 @@ function showCustomerDetail(customerId) {
       if (confirmed) {
         console.log(`[客户详情日志] 确认删除，调用 deleteCustomer()`);
         deleteCustomer(); // 调用删除客户函数
-        // 移除关闭模态框的逻辑，改为在 deleteCustomer 成功后执行
-        // console.log('[客户详情日志] 确认删除后关闭模态框');
-        // modal.style.display = 'none';
-        // modal.classList.remove('ant-modal-open');
       } else {
         console.log('[客户详情日志] 取消删除');
       }
     });
   }
   
-  // 添加时间戳参数，强制从服务器获取最新数据
-  const timestamp = new Date().getTime();
-  fetchWithAuth(`/api/customers/${customerId}?_t=${timestamp}`)
-    .then(response => {
-      if (!response.ok) {
-        throw new Error('获取客户详情失败');
-      }
-      return response.json();
-    })
-    .then(customer => {
-      const detailContent = document.getElementById('customer-detail-content');
-      
-      // 客户详情内容
-      let html = `
-        
-        <div style="display: flex; flex-wrap: wrap; gap: 20px;">
-          <div style="flex: 1; min-width: 200px;">
-            <h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">基本信息</h4>
-            <p><strong>姓名:</strong> ${customer.name}</p>
-            <p><strong>电话:</strong> ${customer.phone}</p>
-            <p><strong>年龄:</strong> ${customer.age || ''}</p>
-            <p><strong>身高:</strong> ${customer.height || ''}</p>
-            <p><strong>上衣码数:</strong> ${customer.upper_size || ''}</p>
-            <p><strong>下衣码数:</strong> ${customer.lower_size || ''}</p>
-            <p><strong>体型:</strong> ${customer.body_type || ''}</p>
-            <p><strong>特征:</strong> ${customer.features || ''}</p>
-          </div>
-          <div style="flex: 1; min-width: 200px;">
-            <h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">偏好信息</h4>
-            <p><strong>接待:</strong> ${customer.reception || ''}</p>
-            <p><strong>性格:</strong> ${customer.personality || ''}</p>
-            <p><strong>偏爱色系:</strong> ${customer.preferred_colors || ''}</p>
-            <p><strong>偏爱风格:</strong> ${customer.preferred_styles || ''}</p>
-            <p><strong>陪同:</strong> ${customer.accompaniment || ''}</p>
-            <p><strong>归属部门:</strong> ${customer.department || ''}</p>
-            <p><strong>归属员工:</strong> ${customer.employee || ''}</p>
-            <p><strong>建档日期:</strong> ${formatDate(customer.registration_date) || ''}</p>
-          </div>
-          <div style="flex: 1; min-width: 200px;">
-            <h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">消费信息</h4>
-            <p><strong>消费金额:</strong> ${formatCurrency(customer.total_consumption)}</p>
-            <p><strong>消费数量:</strong> ${customer.consumption_count || 0}</p>
-            <p><strong>消费次数:</strong> ${customer.consumption_times || 0}</p>
-            <p><strong>累计积分:</strong> ${customer.total_points || 0}</p>
-            <p><strong>可用积分:</strong> ${customer.available_points || 0}</p>
-            <p><strong>最近消费:</strong> ${formatDate(customer.last_consumption) || ''}</p>
-            <p><strong>最近回访:</strong> ${formatDateTime(customer.last_visit) || '无回访记录'}</p>
-          </div>
-        </div>
-      `;
-      
-      // 照片区域
-      if (customer.photo) {
-        html += `
-          <div style="width: 100%; margin-top: 20px;">
-            <h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">客户照片</h4>
-            <div style="text-align: center;">
-              <img src="/api/customers/${customer.id}/photo?_t=${new Date().getTime()}" style="max-width: 300px; max-height: 300px;" alt="客户照片">
-            </div>
-          </div>
-        `;
-      }
-      
-      detailContent.innerHTML = html;
-      console.log('客户详情加载完成');
-      
-      // 按钮已移除，不再需要添加事件监听器
-    })
-    .catch(error => {
-      console.error('获取客户详情失败:', error);
-      detailContent.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">获取客户详情失败: ${error.message}</div>`;
-    });
+  // 加载基本信息页面
+  loadBasicInfoPage(customerId);
 
   // 设置模态框关闭按钮
   const closeButtons = modal.querySelectorAll('.modal-close, #close-detail-btn');
@@ -1242,8 +1285,13 @@ function resetCustomerForm() {
 }
 
 // 处理搜索
-function handleSearch() {
+function handleSearch(page = 1) {
+  if (!currentSortField) currentSortField = 'last_visit';
+  if (!currentSortOrder) currentSortOrder = 'desc';
+  // 修正：如果currentSortField为id，强制currentSortOrder为desc
+  if (currentSortField === 'id') currentSortOrder = 'desc';
   const searchTerm = document.getElementById('search-input').value.trim().toLowerCase();
+  // 每次都直接从select读取当前归属员工
   const employeeSelect = document.getElementById('employee-select');
   const employeeOtherInput = document.getElementById('employee-other-input');
   let employee = '';
@@ -1254,54 +1302,32 @@ function handleSearch() {
       employee = employeeSelect.value;
     }
   }
-  // 如果选择了员工，则带上员工参数
+  // 排序参数
+  let sortParams = '';
+  if (currentSortField === 'id') {
+    sortParams = `&sort=id&order=desc`;
+  } else if (currentSortField && currentSortOrder) {
+    sortParams = `&sort=${encodeURIComponent(currentSortField)}&order=${encodeURIComponent(currentSortOrder)}`;
+  }
+  // 统一逻辑：有employee参数就查员工，没有就查全部，但都带排序
+  let url = '';
   if (employee) {
-    // 只查员工
-    let url = `/api/customers/search?employee=${encodeURIComponent(employee)}`;
+    url = `/api/customers/search?employee=${encodeURIComponent(employee)}&page=${page}&pageSize=${pageSize}${sortParams}`;
     if (searchTerm) {
       url += `&q=${encodeURIComponent(searchTerm)}`;
     }
-    // ...显示加载状态...
-    const tableBody = document.getElementById('customers-list');
-    tableBody.innerHTML = '<tr><td colspan="24" style="text-align: center;"><div class="spinner"></div><div>搜索中，请稍候...</div></td></tr>';
-    const searchStartTime = Date.now();
-    fetchWithAuth(url)
-      .then(response => {
-        if (!response.ok) throw new Error('搜索失败');
-        return response.json();
-      })
-      .then(data => {
-        if (!data.success || !data.data) throw new Error(data.message || '搜索失败');
-        const elapsed = Date.now() - searchStartTime;
-        const remainingWait = Math.max(0, 500 - elapsed);
-        setTimeout(() => {
-          currentPage = 1;
-          totalCustomers = data.data.length;
-          totalPages = Math.ceil(totalCustomers / pageSize);
-          renderCustomerTable(data.data);
-          renderPagination();
-        }, remainingWait);
-      })
-      .catch(error => {
-        const elapsed = Date.now() - searchStartTime;
-        const remainingWait = Math.max(0, 500 - elapsed);
-        setTimeout(() => {
-          showAlert('搜索失败，请重试', 'warning');
-          loadCustomers(1);
-        }, remainingWait);
-      });
-    return;
+  } else if (searchTerm) {
+    url = `/api/customers/search?q=${encodeURIComponent(searchTerm)}&page=${page}&pageSize=${pageSize}${sortParams}`;
+  } else if (currentSortField === 'id') {
+    url = `/api/customers?page=${page}&pageSize=${pageSize}&sort=id&order=desc`;
+  } else {
+    url = `/api/customers?page=${page}&pageSize=${pageSize}${sortParams}`;
   }
-  // 没有选择员工，走原有逻辑
-  if (!searchTerm) {
-    loadCustomers(1, false, false);
-    return;
-  }
-  // 原有搜索逻辑
+  // ...显示加载状态...
   const tableBody = document.getElementById('customers-list');
   tableBody.innerHTML = '<tr><td colspan="24" style="text-align: center;"><div class="spinner"></div><div>搜索中，请稍候...</div></td></tr>';
   const searchStartTime = Date.now();
-  fetchWithAuth(`/api/customers/search?q=${encodeURIComponent(searchTerm)}`)
+  fetchWithAuth(url)
     .then(response => {
       if (!response.ok) throw new Error('搜索失败');
       return response.json();
@@ -1311,9 +1337,9 @@ function handleSearch() {
       const elapsed = Date.now() - searchStartTime;
       const remainingWait = Math.max(0, 500 - elapsed);
       setTimeout(() => {
-        currentPage = 1;
-        totalCustomers = data.data.length;
-        totalPages = Math.ceil(totalCustomers / pageSize);
+        currentPage = data.pagination.currentPage;
+        totalCustomers = data.pagination.total;
+        totalPages = data.pagination.totalPages;
         renderCustomerTable(data.data);
         renderPagination();
       }, remainingWait);
@@ -1555,23 +1581,51 @@ function updateTableHeader() {
       // 添加点击事件
       th.style.cursor = 'pointer';
       th.addEventListener('click', () => {
-        // 切换排序顺序
-        if (currentSortField === 'last_visit') {
-          if (currentSortOrder === 'desc') {
-            currentSortOrder = 'asc';
-          } else if (currentSortOrder === 'asc') {
-            // 第三次点击，清除排序
-            currentSortField = '';
-            currentSortOrder = '';
-          }
+        // 循环切换排序顺序：desc -> asc -> id desc -> desc ...
+        if (currentSortField === 'last_visit' && currentSortOrder === 'desc') {
+          currentSortOrder = 'asc';
+        } else if (currentSortField === 'last_visit' && currentSortOrder === 'asc') {
+          currentSortField = 'id';
+          currentSortOrder = 'desc'; // 强制id排序为desc
         } else {
           currentSortField = 'last_visit';
-          currentSortOrder = 'desc'; // 默认降序（最新的在前）
+          currentSortOrder = 'desc';
         }
-        
-        // 重新加载数据
-        loadCustomers(1, true);
+        // 重新加载数据，始终用handleSearch(1)保证员工参数不丢失
+        handleSearch(1);
       });
+      // 显示排序箭头
+      if (currentSortField === 'last_visit') {
+        th.innerHTML += currentSortOrder === 'desc' ? ' ↓' : ' ↑';
+      } else if (currentSortField === 'id' && th.textContent.includes('最近回访')) {
+        th.innerHTML += ' (ID↓)';
+      }
+    } else if (column.id === 'last_consumption') {
+      // 为"最近消费"列添加排序功能
+      th.textContent = column.name;
+      
+      // 添加点击事件
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', () => {
+        // 循环切换排序顺序：desc -> asc -> id desc -> desc ...
+        if (currentSortField === 'last_consumption' && currentSortOrder === 'desc') {
+          currentSortOrder = 'asc';
+        } else if (currentSortField === 'last_consumption' && currentSortOrder === 'asc') {
+          currentSortField = 'id';
+          currentSortOrder = 'desc'; // 强制id排序为desc
+        } else {
+          currentSortField = 'last_consumption';
+          currentSortOrder = 'desc';
+        }
+        // 重新加载数据，始终用handleSearch(1)保证员工参数不丢失
+        handleSearch(1);
+      });
+      // 显示排序箭头
+      if (currentSortField === 'last_consumption') {
+        th.innerHTML += currentSortOrder === 'desc' ? ' ↓' : ' ↑';
+      } else if (currentSortField === 'id' && th.textContent.includes('最近消费')) {
+        th.innerHTML += ' (ID↓)';
+      }
     } else {
       // 其他列直接显示文本
       th.textContent = column.name;
@@ -1881,4 +1935,359 @@ async function exportCustomers() {
 // 全局alert函数，避免未定义报错
 function showAlert(message, type = 'error') {
   alert(message);
+}
+
+// ===== 客户详情双页面切换功能 =====
+
+// 初始化客户详情页面结构
+function initializeCustomerDetailPages() {
+  // 确保页面切换按钮存在
+  const pageTabs = document.querySelector('.page-tabs');
+  if (!pageTabs) {
+    console.error('页面切换按钮不存在');
+    return;
+  }
+
+  // 绑定页面切换事件
+  const tabs = pageTabs.querySelectorAll('.page-tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const targetPage = tab.getAttribute('data-page');
+      switchPage(targetPage);
+    });
+  });
+
+  // 默认显示基本信息页面
+  switchPage('basic-info');
+}
+
+// 切换页面
+function switchPage(pageName) {
+  console.log(`切换到页面: ${pageName}`);
+  
+  // 更新页面切换按钮状态
+  const tabs = document.querySelectorAll('.page-tab');
+  tabs.forEach(tab => {
+    if (tab.getAttribute('data-page') === pageName) {
+      tab.classList.add('active');
+    } else {
+      tab.classList.remove('active');
+    }
+  });
+
+  // 更新页面内容显示状态
+  const pages = document.querySelectorAll('.page-content');
+  pages.forEach(page => {
+    if (page.id === `${pageName}-page`) {
+      page.classList.add('active');
+    } else {
+      page.classList.remove('active');
+    }
+  });
+
+  // 根据页面类型加载相应内容
+  if (pageName === 'basic-info') {
+    loadBasicInfoPage(currentCustomerId);
+  } else if (pageName === 'consumption-details') {
+    loadConsumptionDetailsPage(currentCustomerId);
+  } else if (pageName === 'visit-records') {
+    loadVisitRecordsPage(currentCustomerId);
+  }
+}
+
+// 加载基本信息页面
+function loadBasicInfoPage(customerId) {
+  const basicInfoPage = document.getElementById('basic-info-page');
+  if (!basicInfoPage) {
+    console.error('基本信息页面不存在');
+    return;
+  }
+
+  // 显示加载指示器
+  basicInfoPage.innerHTML = '<div style="text-align: center; padding: 30px;"><div class="spinner"></div><div>加载客户详情...</div></div>';
+
+  // 添加时间戳参数，强制从服务器获取最新数据
+  const timestamp = new Date().getTime();
+  fetchWithAuth(`/api/customers/${customerId}?_t=${timestamp}`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('获取客户详情失败');
+      }
+      return response.json();
+    })
+    .then(customer => {
+      // 客户详情内容
+      let html = `
+        <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+          <div style="flex: 1; min-width: 200px;">
+            <h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">基本信息</h4>
+            <p><strong>姓名:</strong> ${customer.name}</p>
+            <p><strong>电话:</strong> ${customer.phone}</p>
+            <p><strong>年龄:</strong> ${customer.age || ''}</p>
+            <p><strong>身高:</strong> ${customer.height || ''}</p>
+            <p><strong>上衣码数:</strong> ${customer.upper_size || ''}</p>
+            <p><strong>下衣码数:</strong> ${customer.lower_size || ''}</p>
+            <p><strong>体型:</strong> ${customer.body_type || ''}</p>
+            <p><strong>特征:</strong> ${customer.features || ''}</p>
+          </div>
+          <div style="flex: 1; min-width: 200px;">
+            <h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">偏好信息</h4>
+            <p><strong>接待:</strong> ${customer.reception || ''}</p>
+            <p><strong>性格:</strong> ${customer.personality || ''}</p>
+            <p><strong>偏爱色系:</strong> ${customer.preferred_colors || ''}</p>
+            <p><strong>偏爱风格:</strong> ${customer.preferred_styles || ''}</p>
+            <p><strong>陪同:</strong> ${customer.accompaniment || ''}</p>
+            <p><strong>归属部门:</strong> ${customer.department || ''}</p>
+            <p><strong>归属员工:</strong> ${customer.employee || ''}</p>
+            <p><strong>建档日期:</strong> ${formatDate(customer.registration_date) || ''}</p>
+          </div>
+          <div style="flex: 1; min-width: 200px;">
+            <h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">消费信息</h4>
+            <p><strong>消费金额:</strong> ${formatCurrency(customer.total_consumption)}</p>
+            <p><strong>消费数量:</strong> ${customer.consumption_count || 0}</p>
+            <p><strong>消费次数:</strong> ${customer.consumption_times || 0}</p>
+            <p><strong>累计积分:</strong> ${customer.total_points || 0}</p>
+            <p><strong>可用积分:</strong> ${customer.available_points || 0}</p>
+            <p><strong>最近消费:</strong> ${formatDate(customer.last_consumption) || ''}</p>
+            <p><strong>最近回访:</strong> ${formatDateTime(customer.last_visit) || '无回访记录'}</p>
+          </div>
+        </div>
+      `;
+      
+      // 照片区域
+      if (customer.photo) {
+        html += `
+          <div style="width: 100%; margin-top: 20px;">
+            <h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">客户照片</h4>
+            <div style="text-align: center;">
+              <img src="/api/customers/${customer.id}/photo?_t=${new Date().getTime()}" style="max-width: 300px; max-height: 300px;" alt="客户照片">
+            </div>
+          </div>
+        `;
+      }
+      
+      basicInfoPage.innerHTML = html;
+      console.log('基本信息页面加载完成');
+    })
+    .catch(error => {
+      console.error('获取客户详情失败:', error);
+      basicInfoPage.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">获取客户详情失败: ${error.message}</div>`;
+    });
+}
+
+// 加载消费详情页面
+function loadConsumptionDetailsPage(customerId) {
+  const consumptionDetailsPage = document.getElementById('consumption-details-page');
+  if (!consumptionDetailsPage) {
+    console.error('消费详情页面不存在');
+    return;
+  }
+
+  // 显示加载指示器
+  const consumptionContent = consumptionDetailsPage.querySelector('.consumption-details-content');
+  consumptionContent.innerHTML = '<div style="text-align: center; padding: 30px;"><div class="spinner"></div><div>加载消费详情...</div></div>';
+
+  // 获取消费详情数据
+  fetchWithAuth(`/api/customers/${customerId}/consumption-details`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('获取消费详情失败');
+      }
+      return response.json();
+    })
+    .then(data => {
+      if (!data.success) {
+        throw new Error(data.message || '获取消费详情失败');
+      }
+
+      console.log('消费详情API返回数据:', data);
+      console.log('销售记录数量:', data.data.length);
+      data.data.forEach((sale, index) => {
+        console.log(`销售记录 ${index + 1}:`, {
+          sale_id: sale.sale_id,
+          date: sale.date,
+          transaction_number: sale.transaction_number,
+          total_amount: sale.total_amount,
+          items_count: sale.items ? sale.items.length : 0
+        });
+      });
+
+      renderConsumptionDetails(data.data, consumptionContent);
+    })
+    .catch(error => {
+      console.error('获取消费详情失败:', error);
+      consumptionContent.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">获取消费详情失败: ${error.message}</div>`;
+    });
+}
+
+// 渲染消费详情表格
+function renderConsumptionDetails(consumptionData, container) {
+  if (!consumptionData || consumptionData.length === 0) {
+    container.innerHTML = `
+      <div class="consumption-empty">
+        <div class="consumption-empty-icon">📊</div>
+        <div class="consumption-empty-text">暂无消费记录</div>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '<h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">消费记录详情</h4>';
+
+  // 按销售记录分组显示
+  consumptionData.forEach((sale, index) => {
+    html += `
+      <div class="consumption-group">
+        <div class="consumption-group-header">
+          <div class="consumption-group-title">
+            交易号: ${sale.transaction_number || '无'}
+          </div>
+          <div class="consumption-group-info">
+            ${sale.date || '无日期'} | ${sale.store || '无店铺'} | 总金额: ${formatCurrency(sale.total_amount)}
+          </div>
+        </div>
+        <div class="consumption-group-content">
+          <table class="consumption-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>货号</th>
+                <th>尺码</th>
+                <th>数量</th>
+                <th>金额</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
+    if (sale.items && sale.items.length > 0) {
+      sale.items.forEach(item => {
+        html += `
+          <tr>
+            <td>${sale.date || ''}</td>
+            <td>${item.product_code || ''}</td>
+            <td>${item.size || ''}</td>
+            <td>${item.quantity || 1}</td>
+            <td>${formatCurrency(item.amount)}</td>
+          </tr>
+        `;
+      });
+    } else {
+      // 如果没有商品明细，显示销售记录本身
+      html += `
+        <tr>
+          <td>${sale.date || ''}</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>${formatCurrency(sale.total_amount)}</td>
+        </tr>
+      `;
+    }
+
+    html += `
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  console.log('消费详情页面加载完成');
+}
+
+// 加载回访记录页面
+function loadVisitRecordsPage(customerId) {
+  const visitRecordsPage = document.getElementById('visit-records-page');
+  if (!visitRecordsPage) {
+    console.error('回访记录页面不存在');
+    return;
+  }
+
+  // 显示加载指示器
+  const visitRecordsContent = visitRecordsPage.querySelector('.visit-records-content');
+  visitRecordsContent.innerHTML = '<div style="text-align: center; padding: 30px;"><div class="spinner"></div><div>加载回访记录...</div></div>';
+
+  // 获取回访记录数据
+  fetchWithAuth(`/api/customers/${customerId}/visits`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('获取回访记录失败');
+      }
+      return response.json();
+    })
+    .then(data => {
+      if (!data.success) {
+        throw new Error(data.message || '获取回访记录失败');
+      }
+
+      console.log('回访记录API返回数据:', data);
+      console.log('回访记录数量:', data.data.length);
+      
+      renderVisitRecordsTable(data.data, visitRecordsContent);
+    })
+    .catch(error => {
+      console.error('获取回访记录失败:', error);
+      visitRecordsContent.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">获取回访记录失败: ${error.message}</div>`;
+    });
+}
+
+// 渲染回访记录表格
+function renderVisitRecordsTable(visitData, container) {
+  if (!visitData || visitData.length === 0) {
+    container.innerHTML = `
+      <div class="visit-records-empty">
+        <div class="visit-records-empty-icon">📋</div>
+        <div class="visit-records-empty-text">暂无回访记录</div>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '<h4 style="color: #1890ff; font-size: 16px; padding-bottom: 8px; border-bottom: 2px solid #1890ff; margin-bottom: 12px;">回访记录详情</h4>';
+  
+  html += `
+    <div class="visit-records-table-container">
+      <table class="visit-records-table">
+        <thead>
+          <tr>
+            <th>回访日期</th>
+            <th>回访方式</th>
+            <th>回访目的</th>
+            <th>回访结果</th>
+            <th>备注</th>
+            <th>记录时间</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  visitData.forEach(visit => {
+    html += `
+      <tr>
+        <td>${formatDate(visit.visit_date) || ''}</td>
+        <td>${visit.visit_type || ''}</td>
+        <td>${visit.visit_purpose || ''}</td>
+        <td>${visit.visit_result || ''}</td>
+        <td title="${visit.notes || ''}">${truncateText(visit.notes || '', 30)}</td>
+        <td>${formatDateTime(visit.created_at) || ''}</td>
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  container.innerHTML = html;
+  console.log('回访记录页面加载完成');
+}
+
+// 截取文本函数
+function truncateText(text, maxLength) {
+  if (!text) return '';
+  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
 }
