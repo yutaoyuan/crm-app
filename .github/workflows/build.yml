@@ -28,7 +28,7 @@ jobs:
       timeout-minutes: 10
 
     - name: Rebuild native modules
-      run: npx electron-rebuild
+      run: npx @electron/rebuild
       timeout-minutes: 15
 
     - name: Build application
